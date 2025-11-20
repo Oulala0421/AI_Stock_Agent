@@ -3,20 +3,39 @@ system:
   max_risk_pct: 0.015
   dry_run: false
 
+capital_allocation:
+  core_pool: 10200        # 60% - ETF only, minimal turnover
+  satellite_pool: 6800    # 40% - Stocks, flexible sizing
+  
+position_limits:
+  core_max_pct: 0.30      # Max 30% of core pool per position
+  satellite_max_pct: 0.25 # Max 25% of satellite pool per position
+
 market:
   benchmark: "VOO"
   etf_watch_list: ["VOO", "QQQ", "SMH"]
+  public_showcase_list: ["NVTS", "PLTR"]
 
 strategy:
-  confidence_threshold:
-    strong_buy: 80
-    accumulate: 60
-    hold: 40
-  weights:
-    market: 0.3
-    quality: 0.3
-    technical: 0.2
-    sentiment: 0.2
+  core:
+    threshold_buy: 60
+    threshold_sell: 35
+    weights:
+      market: 0.10
+      quality: 0.60
+      cost: 0.20
+      sentiment: 0.10
+  
+  satellite:
+    threshold_buy: 70
+    threshold_accumulate: 65
+    threshold_reduce: 50
+    threshold_sell: 40
+    weights:
+      market: 0.25
+      quality: 0.35
+      technical: 0.30
+      sentiment: 0.10
 
 reporting:
   max_length_telegram: 4000

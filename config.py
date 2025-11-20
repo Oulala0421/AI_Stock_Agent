@@ -33,7 +33,10 @@ def load_config():
         "TG_CHAT_ID": TG_CHAT_ID,
         "LINE_TOKEN": LINE_TOKEN,
         "LINE_USER_ID": LINE_USER_ID,
-        "STRATEGY": config.get('strategy', {})
+        "STRATEGY": config.get('strategy', {}),
+        "MARKET": config.get('market', {}),
+        "CAPITAL_ALLOCATION": config.get('capital_allocation', {}),
+        "POSITION_LIMITS": config.get('position_limits', {})
     }
 
 # Singleton instance
