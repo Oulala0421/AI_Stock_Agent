@@ -71,7 +71,7 @@ def run_analysis(mode="post_market", dry_run=False):
             ai_text = generate_ai_briefing(symbol, data, news_text, sentiment, fund, "HOLDING", mode)
             
             # 計算倉位
-            shares, amount, stop_loss = calculate_position_size(data['price'], data['volatility']['atr'], conf_score)
+            shares, amount, stop_loss, signal = calculate_position_size(data['price'], data['volatility']['atr'], conf_score)
             my_cost = MY_COSTS.get(symbol, 0)
             
             # 私密版詳細數據
@@ -118,7 +118,7 @@ def run_analysis(mode="post_market", dry_run=False):
             
             # 私密版內容 (含分數與建議)
             private_content = f"🔹 {symbol} (分:{conf_score:.0f} | ${data['price']:.2f})\n{ai_text}\n"
-            shares, amount, stop_loss = calculate_position_size(data['price'], data['volatility']['atr'], conf_score)
+            shares, amount, stop_loss, signal = calculate_position_size(data['price'], data['volatility']['atr'], conf_score)
             private_content += f"💡 凱利: ${amount:.0f} ({shares}股)\n----------------\n"
             report_private += private_content
 
