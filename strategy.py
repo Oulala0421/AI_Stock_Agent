@@ -144,7 +144,7 @@ def calculate_confidence_score(market_regime, quality_data, technical_data, sent
         trend_score = 0
         if market_regime['is_bullish']: trend_score += 10  # 大盤多頭
         if market_regime.get('ma50_above_ma200', False): trend_score += 5  # 金叉
-        if quality_data.get('dual_momentum', {}).get('is_bullish', False): trend_score += 5  # 個股動能
+        if quality_data.get('dual_momentum', False): trend_score += 5  # 個股動能
         
         # VIX恐慌懲罰(選股期不買恐慌)
         if market_regime['vix'] > 30: trend_score -= 10
@@ -154,7 +154,7 @@ def calculate_confidence_score(market_regime, quality_data, technical_data, sent
         
         # B. 品質 (30%) - 成長潛力
         quality_score = 0
-        if quality_data.get('dual_momentum', {}).get('is_bullish', False): quality_score += 10
+        if quality_data.get('dual_momentum', False): quality_score += 10
         
         # ROE高標準
         try:
