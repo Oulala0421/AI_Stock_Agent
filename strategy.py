@@ -107,19 +107,20 @@ def calculate_confidence_score(market_regime, quality_data, technical_data, sent
         
         score += quality_score
         
-        # C. 價格吸引力 (35%) - **核心重點:相對價值**
+        # C. 價格吸引力 (35%) - Adjusted for Trend Following
         value_score = 0
         
-        # RSI百分位 (0-1,越低越便宜)
+        # RSI百分位 (0-1)
         rsi_percentile = technical_data.get('rsi_percentile', 0.5)
-        if rsi_percentile < 0.25: value_score += 20  # 處於過去1年最低25%
-        elif rsi_percentile < 0.40: value_score += 12
-        elif rsi_percentile < 0.55: value_score += 5
+        if rsi_percentile < 0.25: value_score += 20  # Deep Value
+        elif rsi_percentile < 0.40: value_score += 15  # Value
+        elif rsi_percentile < 0.60: value_score += 10  # Neutral/Fair
+        elif rsi_percentile < 0.80: value_score += 5   # Momentum/Strong
         
         # 布林帶位置
         bb_position = technical_data.get('bb_position', 0.5)
         if bb_position < 0.3: value_score += 10  # 接近下軌
-        elif bb_position < 0.5: value_score += 5
+        elif bb_position < 0.7: value_score += 5 # Wider range
         
         # VIX恐慌買入機會
         if market_regime['vix'] > 25: value_score += 5  # 市場恐慌時加碼
@@ -187,22 +188,22 @@ def calculate_confidence_score(market_regime, quality_data, technical_data, sent
         
         score += valuation_score
         
-        # D. 技術時機 (20%) - **相對便宜而非絕對超賣**
+        # D. 技術時機 (20%) - Momentum & Value
         tech_score = 0
         rsi = technical_data.get('rsi', 50)
         rsi_percentile = technical_data.get('rsi_percentile', 0.5)
         
-        # RSI百分位 (相對評估)
-        if rsi_percentile < 0.20: tech_score += 12  # 過去1年最低20%
-        elif rsi_percentile < 0.35: tech_score += 8
-        elif rsi_percentile < 0.50: tech_score += 4
+        # Reward both Value (Dip) AND Momentum (Trend)
+        if rsi_percentile < 0.20: tech_score += 15      # Buy the dip
+        elif rsi_percentile < 0.40: tech_score += 10
+        elif rsi_percentile > 0.60 and rsi_percentile < 0.90: tech_score += 10 # Buy the breakout/trend
+        elif rsi_percentile >= 0.40 and rsi_percentile <= 0.60: tech_score += 5 # Neutral
         
-        # 超買懲罰 (獲利信號)
-        if rsi > 75: tech_score -= 10  # 極度超買
-        elif rsi > 70: tech_score -= 5
+        # Profit-taking penalty - ONLY if extreme extension
+        if rsi > 85: tech_score -= 5  # Only extreme overbought
         
         # 布林帶位置
-        if technical_data.get('is_oversold_bb', False): tech_score += 8
+        if technical_data.get('is_oversold_bb', False): tech_score += 5
         
         score += tech_score
         
@@ -240,10 +241,10 @@ def calculate_position_size(price, atr, confidence_score, stock_type="Satellite"
         core_pool = pools.get('core_pool', 10200)
         max_position = core_pool * limits.get('core_max_pct', 0.30)
         
-        if confidence_score >= 65:
+        if confidence_score >= 55: # Relaxed threshold
             kelly_pct = 0.20  # 20% of available pool
             signal = "BUY"
-        elif confidence_score >= 55:
+        elif confidence_score >= 50:
             kelly_pct = 0.15  # 15% of available pool
             signal = "ACCUMULATE"
         else:
@@ -268,7 +269,76 @@ def calculate_position_size(price, atr, confidence_score, stock_type="Satellite"
             signal = "HOLD"
         else:
             kelly_pct = 0.0
-            signal = "REDUCE" if confidence_score < 40 else "HOLD"
+            signal = "REDUCE" if confidence_score < 35 else "HOLD" # Lower sell threshold
+        
+        position_value = min(available_pool * kelly_pct, max_position)
+    
+    if position_value < price:  # Can't afford even 1 share
+        return 0, 0, stop_loss_price, "HOLD"
+    
+        # E. 輿情 (5%) - 降低權重
+        sent_mapped = (sentiment_score + 1) * 2.5  # -1~1 -> 0~5
+        score += sent_mapped
+    
+    # 一票否決 (Universal)
+    if quality_data.get('fraud_risk'): score = 0
+    
+    return max(0, min(100, score))
+
+def calculate_position_size(price, atr, confidence_score, stock_type="Satellite", available_pool=0):
+    """
+    計算建議倉位 - Core/Satellite 差異化策略
+    
+    Core: DCA 精神，緩慢定期加碼 (15%-20% of available pool)
+    Satellite: 信心驅動，彈性調整 (15%-35% of available pool)
+    
+    Returns: (shares, position_value, stop_loss_price, signal)
+    """
+    if atr == 0 or available_pool <= 0: 
+        return 0, 0, 0, "HOLD"
+    
+    pools = Config['CAPITAL_ALLOCATION']
+    limits = Config['POSITION_LIMITS']
+    
+    # 計算停損價
+    stop_loss_dist = atr * 2
+    stop_loss_price = price - stop_loss_dist
+    
+    # Type-specific logic
+    if stock_type == "Core":
+        # Core: Conservative DCA approach
+        core_pool = pools.get('core_pool', 10200)
+        max_position = core_pool * limits.get('core_max_pct', 0.30)
+        
+        if confidence_score >= 55: # Relaxed threshold
+            kelly_pct = 0.20  # 20% of available pool
+            signal = "BUY"
+        elif confidence_score >= 50:
+            kelly_pct = 0.15  # 15% of available pool
+            signal = "ACCUMULATE"
+        else:
+            kelly_pct = 0.0
+            signal = "HOLD"
+            
+        position_value = min(available_pool * kelly_pct, max_position)
+    
+    else:  # Satellite
+        # Satellite: Confidence-driven flexible sizing
+        satellite_pool = pools.get('satellite_pool', 6800)
+        max_position = satellite_pool * limits.get('satellite_max_pct', 0.25)
+        
+        if confidence_score >= 70:
+            kelly_pct = 0.35  # 35% of available pool - high conviction
+            signal = "BUY"
+        elif confidence_score >= 65:
+            kelly_pct = 0.25  # 25% of available pool
+            signal = "ACCUMULATE"
+        elif confidence_score >= 50:
+            kelly_pct = 0.15  # 15% of available pool - cautious add
+            signal = "HOLD"
+        else:
+            kelly_pct = 0.0
+            signal = "REDUCE" if confidence_score < 35 else "HOLD" # Lower sell threshold
         
         position_value = min(available_pool * kelly_pct, max_position)
     
@@ -285,7 +355,7 @@ def _call_gemini_api(client, prompt):
     response = client.models.generate_content(model='gemini-2.0-flash', contents=prompt)
     return response.text
 
-def generate_ai_briefing(symbol, market_data, news_text, sentiment_score, fundamentals, role, mode="post_market"):
+def generate_ai_briefing(symbol, market_data, news_text, sentiment_score, fundamentals, role, confidence_score=0, stock_type="Satellite", mode="post_market"):
     if not GEMINI_API_KEY: return "⚠️ 未設定 Gemini API Key"
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
@@ -293,31 +363,54 @@ def generate_ai_briefing(symbol, market_data, news_text, sentiment_score, fundam
         time_context = "美股盤前" if mode == "pre_market" else "美股盤後"
         trend_emoji = "🔥" if market_data['trend']['dual_momentum']['is_bullish'] else "❄️"
         
+        # Determine Strategy Context
+        strategy_context = ""
+        if stock_type == "Core":
+            strategy_context = "策略目標: Core (長期持有，逢低加碼)。重點關注: 趨勢健康度、RSI低檔價值、長期基本面。"
+        else:
+            strategy_context = "策略目標: Satellite (波段操作，動能與估值)。重點關注: 趨勢動能、估值安全邊際、RSI技術面。"
+            
+        # Determine Score Context
+        score_context = f"目前 AI 信心分數: {confidence_score:.0f}/100。"
+        if confidence_score >= (55 if stock_type=="Core" else 70):
+            score_context += " (強烈買入訊號 🟢)"
+        elif confidence_score >= (50 if stock_type=="Core" else 65):
+            score_context += " (累積部位訊號 🟡)"
+        elif confidence_score < (25 if stock_type=="Core" else 35):
+            score_context += " (減碼/觀望訊號 🔴)"
+        else:
+            score_context += " (持有觀望 ⚪)"
+
         prompt = f"""
         Role: 量化金融系統架構師 (Quant Architect)
         Task: 為 {symbol} 撰寫 {time_context} 投資快報。
+        
+        【策略背景】
+        • {strategy_context}
+        • {score_context}
+        
+        【輸入數據】
+        • 現價: ${market_data['price']:.2f}
+        • RSI: {market_data['momentum']['rsi']:.1f} (技術指標)
+        • 趨勢: {trend_emoji} 雙重動能
+        • 目標價: ${fundamentals.get('target', 'N/A')}
+        • 新聞摘要: {news_text}
         
         【嚴格規範】
         1. ❌ 嚴禁使用 Markdown 粗體 (**)，LINE 會顯示亂碼。
         2. ✅ 必須使用 Emoji (📈, 🛡️, 💡) 區隔段落。
         3. ✅ 字數限制：180 字以內。
-        4. ✅ 敘事結構：【前因 (Cause)】 -> 【後果 (Effect)】。
-
-        【輸入數據】
-        • 現價: ${market_data['price']:.2f}
-        • RSI: {market_data['momentum']['rsi']:.1f}
-        • 趨勢: {trend_emoji} 雙重動能
-        • 新聞: {news_text}
+        4. ✅ 必須解釋「為什麼」分數是高或低 (例如: RSI過低、趨勢轉強、估值便宜)。
         
         【輸出範例】
         📈 市場解讀：
-        受到...影響(前因)，導致股價...。
+        股價回落至 MA200 支撐，RSI 進入超賣區(32)，觸發 Core 策略的低接訊號。
         
         🛡️ 風險提示：
-        若跌破...，可能引發...。
+        若跌破 $120 關鍵支撐，短期趨勢可能轉弱。
         
         💡 操作建議：
-        基於雙重動能策略，建議...。
+        AI 評分 85 分，建議分批佈局，長期持有。
         """
         
         text = _call_gemini_api(client, prompt)
