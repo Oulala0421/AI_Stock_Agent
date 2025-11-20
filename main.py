@@ -26,7 +26,7 @@ def run_analysis(mode="post_market", dry_run=False):
 
     # 1. 從 Google Sheets 獲取清單
     print("📥 連線 Google Sheets...")
-    MY_HOLDINGS, MY_WATCHLIST, MY_COSTS = get_stock_lists()
+    MY_HOLDINGS, MY_WATCHLIST, MY_COSTS, STOCK_TYPES = get_stock_lists()
     
     if not MY_HOLDINGS and not MY_WATCHLIST:
         print("⚠️ 警告：清單為空或連線失敗")
