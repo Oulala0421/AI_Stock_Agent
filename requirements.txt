@@ -1,0 +1,14 @@
+yfinance
+pandas
+numpy
+requests
+finvizfinance
+vaderSentiment
+google-genai
+python-dotenv
+lxml
+gspread
+oauth2client
+tenacity
+pandas_market_calendars
+pyyaml

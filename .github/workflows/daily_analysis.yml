@@ -1,0 +1,66 @@
+name: Daily AI Stock Analysis
+
+on:
+  schedule:
+    # Pre-Market: 13:30 UTC (9:30 PM Taiwan / 9:30 AM EST) - Just before open
+    - cron: '30 13 * * 1-5'
+    # Post-Market: 21:00 UTC (5:00 AM Taiwan / 5:00 PM EST) - After close
+    - cron: '0 21 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Execution Mode'
+        required: true
+        default: 'post_market'
+        type: choice
+        options:
+        - pre_market
+        - post_market
+
+jobs:
+  run_analysis:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: Create Service Account JSON
+      env:
+        GCP_JSON: ${{ secrets.GCP_JSON }}
+      run: |
+        echo "$GCP_JSON" > service_account.json
+
+    - name: Determine Mode
+      id: mode
+      run: |
+        if [ "${{ github.event_name }}" == "schedule" ]; then
+          HOUR=$(date -u +%H)
+          if [ "$HOUR" -eq "13" ]; then
+            echo "MODE=pre_market" >> $GITHUB_ENV
+          else
+            echo "MODE=post_market" >> $GITHUB_ENV
+          fi
+        else
+          echo "MODE=${{ github.event.inputs.mode }}" >> $GITHUB_ENV
+        fi
+
+    - name: Run Analysis
+      env:
+        TG_TOKEN: ${{ secrets.TG_TOKEN }}
+        TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        LINE_TOKEN: ${{ secrets.LINE_TOKEN }}
+        LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      run: |
+        python main.py --mode ${{ env.MODE }}

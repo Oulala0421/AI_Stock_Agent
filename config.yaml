@@ -1,0 +1,23 @@
+system:
+  total_capital: 17000
+  max_risk_pct: 0.015
+  dry_run: false
+
+market:
+  benchmark: "VOO"
+  etf_watch_list: ["VOO", "QQQ", "SMH"]
+
+strategy:
+  confidence_threshold:
+    strong_buy: 80
+    accumulate: 60
+    hold: 40
+  weights:
+    market: 0.3
+    quality: 0.3
+    technical: 0.2
+    sentiment: 0.2
+
+reporting:
+  max_length_telegram: 4000
+  max_length_line: 5000
