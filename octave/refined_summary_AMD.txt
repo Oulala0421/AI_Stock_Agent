@@ -1,11 +1,11 @@
 REFINED FORMULA RESULTS
 Stock Type: Satellite
 Period: 5.0 years
-Total Return: -56.23%
-CAGR: -15.30%
-Sharpe: -0.394
-Max Drawdown: 58.70%
-Win Rate: 48.2%
+Total Return: -31.01%
+CAGR: -7.19%
+Sharpe: -0.037
+Max Drawdown: 54.95%
+Win Rate: 49.4%
 Buy & Hold: 35.25%
-Alpha: -91.49%
-Signals: 131
+Alpha: -66.26%
+Signals: 432

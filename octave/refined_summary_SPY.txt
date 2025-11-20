@@ -1,0 +1,11 @@
+REFINED FORMULA RESULTS
+Stock Type: Core
+Period: 5.0 years
+Total Return: 37.47%
+CAGR: 6.60%
+Sharpe: 0.515
+Max Drawdown: 24.14%
+Win Rate: 55.4%
+Buy & Hold: 84.93%
+Alpha: -47.46%
+Signals: 760

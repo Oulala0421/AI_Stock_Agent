@@ -35,17 +35,16 @@ def run_analysis(mode="post_market", dry_run=False):
     title_suffix = "盤前分析" if mode == "pre_market" else "盤後日報"
     
     # 初始化報告容器
-    report_private = f"🤖 【AI 投資{title_suffix} - 私密版】 🤖\n"
-    report_private += f"📊 市場: VIX {market_regime['vix']:.2f} | SPY {'🔥多頭' if market_regime['is_bullish'] else '❄️空頭'}\n"
-    report_private += f"📅 本週大事:\n{econ_events}\n================\n"
+    score_legend = "🏆 分數說明: 0-100分\nCore: >55買入, >50累積\nSatellite: >70買入, >65累積, <35減碼\n"
     
-    report_public = f"🤖 【AI 投資{title_suffix} - 市場版】 🤖\n"
-    report_public += f"📊 市場情緒: {'😰 恐慌' if market_regime['vix']>25 else '😊 貪婪' if market_regime['vix']<15 else '😐 中性'}\n"
-    report_public += f"📅 本週大事:\n{econ_events}\n================\n"
+    report_content = f"🤖 【AI 投資{title_suffix}】 🤖\n"
+    report_content += f"📊 市場: VIX {market_regime['vix']:.2f} | SPY {'🔥多頭' if market_regime['is_bullish'] else '❄️空頭'}\n"
+    report_content += f"{score_legend}\n"
+    report_content += f"📅 本週大事:\n{econ_events}\n================\n"
 
-    # 1. 持股檢測 (只給 Private)
+    # 1. 持股檢測
     if MY_HOLDINGS:
-        report_private += "\n💼 【我的持股監控】\n"
+        report_content += "\n💼 【我的持股監控】\n"
         for symbol in MY_HOLDINGS:
             data = fetch_and_analyze(symbol)
             if not data: continue
@@ -65,27 +64,28 @@ def run_analysis(mode="post_market", dry_run=False):
             technical_data = data['momentum']
             technical_data['price'] = data['price']
             
-            conf_score = calculate_confidence_score(market_regime, quality_data, technical_data, sentiment)
+            # 獲取股票類型 (預設 Satellite)
+            stock_type = STOCK_TYPES.get(symbol, "Satellite")
+            
+            conf_score = calculate_confidence_score(market_regime, quality_data, technical_data, sentiment, stock_type)
             
             # 生成 AI 簡報
-            ai_text = generate_ai_briefing(symbol, data, news_text, sentiment, fund, "HOLDING", mode)
+            ai_text = generate_ai_briefing(symbol, data, news_text, sentiment, fund, "HOLDING", conf_score, stock_type, mode)
             
             # 計算倉位
-            shares, amount, stop_loss, signal = calculate_position_size(data['price'], data['volatility']['atr'], conf_score)
+            shares, amount, stop_loss, signal = calculate_position_size(data['price'], data['volatility']['atr'], conf_score, stock_type)
             my_cost = MY_COSTS.get(symbol, 0)
             
-            # 私密版詳細數據
-            report_private += f"🔸 {symbol} (分:{conf_score:.0f} | ${data['price']:.2f})\n"
-            report_private += ai_text + "\n"
-            report_private += f"💰 成本: ${my_cost} | 🛡️ 停損: ${stop_loss:.2f}\n"
-            report_private += f"💡 建議: {'加碼' if conf_score>=60 else '持有' if conf_score>=40 else '減碼'} (${amount:.0f})\n"
-            report_private += "----------------\n"
+            # 詳細數據
+            report_content += f"🔸 {symbol} ({stock_type}|{conf_score:.0f}分|${data['price']:.2f})\n"
+            report_content += ai_text + "\n"
+            report_content += f"💰 成本: ${my_cost} | 🛡️ 停損: ${stop_loss:.2f}\n"
+            report_content += f"💡 建議: {signal} (${amount:.0f})\n"
+            report_content += "----------------\n"
 
-    # 2. 關注清單 (Public & Private)
+    # 2. 關注清單
     if MY_WATCHLIST:
-        public_section_header = "\n👀 【重點關注】\n"
-        report_private += public_section_header
-        report_public += public_section_header
+        report_content += "\n👀 【重點關注】\n"
         
         for symbol in MY_WATCHLIST:
             if symbol in MY_HOLDINGS: continue
@@ -107,20 +107,18 @@ def run_analysis(mode="post_market", dry_run=False):
             technical_data = data['momentum']
             technical_data['price'] = data['price']
             
-            conf_score = calculate_confidence_score(market_regime, quality_data, technical_data, sentiment)
+            # 獲取股票類型
+            stock_type = STOCK_TYPES.get(symbol, "Satellite")
             
-            ai_text = generate_ai_briefing(symbol, data, news_text, sentiment, fund, "WATCHLIST", mode)
+            conf_score = calculate_confidence_score(market_regime, quality_data, technical_data, sentiment, stock_type)
             
-            # 公開版內容 (去敏感化)
-            trend_icon = "🔥" if data['trend']['dual_momentum']['is_bullish'] else "❄️"
-            public_content = f"🔹 {symbol} {trend_icon}\n{ai_text}\n----------------\n"
-            report_public += public_content
+            ai_text = generate_ai_briefing(symbol, data, news_text, sentiment, fund, "WATCHLIST", conf_score, stock_type, mode)
             
-            # 私密版內容 (含分數與建議)
-            private_content = f"🔹 {symbol} (分:{conf_score:.0f} | ${data['price']:.2f})\n{ai_text}\n"
-            shares, amount, stop_loss, signal = calculate_position_size(data['price'], data['volatility']['atr'], conf_score)
-            private_content += f"💡 凱利: ${amount:.0f} ({shares}股)\n----------------\n"
-            report_private += private_content
+            # 詳細內容 (含分數與建議)
+            report_content += f"🔹 {symbol} ({stock_type}|{conf_score:.0f}分|${data['price']:.2f})\n"
+            report_content += ai_text + "\n"
+            shares, amount, stop_loss, signal = calculate_position_size(data['price'], data['volatility']['atr'], conf_score, stock_type)
+            report_content += f"💡 建議: {signal} | 凱利: ${amount:.0f}\n----------------\n"
 
     # 3. 市場掃描 (僅 Post-Market 執行)
     if mode == "post_market":
@@ -133,37 +131,32 @@ def run_analysis(mode="post_market", dry_run=False):
                 data = fetch_and_analyze(symbol)
                 if not data: continue
                 
-                # 簡化版處理
+                # 簡化版處理 (Discovery 預設為 Satellite)
                 fund = get_fundamentals(symbol, is_etf=data['is_etf'])
-                ai_text = generate_ai_briefing(symbol, data, "", 0, fund, "DISCOVERY", mode)
+                ai_text = generate_ai_briefing(symbol, data, "", 0, fund, "DISCOVERY", 0, "Satellite", mode)
                 
                 content = f"🚀 {symbol} (RSI: {data['momentum']['rsi']:.1f})\n{ai_text}\n----------------\n"
-                report_private += discovery_section + content
-                report_public += discovery_section + content
+                report_content += discovery_section + content
                 discovery_section = "" # 清空標題以免重複
         else:
             msg = "今日無顯著超跌標的。\n"
-            report_private += discovery_section + msg
-            report_public += discovery_section + msg
+            report_content += discovery_section + msg
     else:
         print("⏩ Pre-market 模式跳過市場掃描")
 
     # 5. 發送或顯示
     if dry_run:
         print("\n📢 [Dry Run] 模擬發送報告內容：")
-        print("\n--- 私密版報告 (Telegram) ---")
-        print(report_private)
-        print("\n--- 市場版報告 (LINE) ---")
-        print(report_public)
+        print(report_content)
     else:
         print("\n📨 正在發送...")
         if Config['TG_TOKEN']:
-            print(" -> Telegram (私密)")
-            send_telegram(report_private, Config['TG_TOKEN'], Config['TG_CHAT_ID'])
+            print(" -> Telegram")
+            send_telegram(report_content, Config['TG_TOKEN'], Config['TG_CHAT_ID'])
             
         if Config['LINE_TOKEN']:
-            print(" -> LINE (公開)")
-            send_line(report_public, Config['LINE_TOKEN'], Config['LINE_USER_ID'])
+            print(" -> LINE")
+            send_line(report_content, Config['LINE_TOKEN'], Config['LINE_USER_ID'])
     
     print("✅ 完成！")
 
