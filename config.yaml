@@ -4,8 +4,8 @@ system:
   dry_run: false
 
 capital_allocation:
-  core_pool: 10200        # 60% - ETF only, minimal turnover
-  satellite_pool: 6800    # 40% - Stocks, flexible sizing
+  core_pool: 11900        # 70% - ETF only, minimal turnover (Vanguard 2016 standard)
+  satellite_pool: 5100    # 30% - Stocks, flexible sizing
   
 position_limits:
   core_max_pct: 0.30      # Max 30% of core pool per position
