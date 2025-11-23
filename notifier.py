@@ -41,26 +41,14 @@ def send_telegram_chunked(message, token, chat_id):
         except Exception as e:
             print(f"❌ TG 連線錯誤: {e}")
 
-def send_line(message, token, user_id=None):
+def send_line(message, token, user_id=None, group_id=None):
     """
     LINE 發送器 - 支援多種發送模式
     
     發送優先順序：
-    1. **群組推送** (環境變數 LINE_GROUP_ID) - 推薦！直接發送到特定群組
-    2. **個人推送** (參數 user_id) - 發送給特定用戶
-    3. **廣播** (都不提供) - 發送給所有好友和群組
-    
-    使用方式:
-    - 發送到特定群組: 設定 LINE_GROUP_ID 環境變數（從 webhook 取得）
-    - 發送給個人: 提供 user_id 參數
-    - 廣播模式: 都不設定
-    
-    注意：
-    - 群組 ID 格式: Cxxxxx... (小寫C開頭)
-    - 用戶 ID 格式: Uxxxxx... (大寫U開頭)
-    - 廣播會發送給所有加入 Bot 的好友和群組
-    
-    技術文件: https://developers.line.biz/en/reference/messaging-api/#send-push-message
+    1. **群組推送** (參數 group_id) - 優先
+    2. **個人推送** (參數 user_id) - 次之
+    3. **廣播** (都不提供) - 最後
     """
     if not token:
         print("⚠️ LINE_TOKEN 未設定，跳過 LINE 發送")
@@ -74,18 +62,15 @@ def send_line(message, token, user_id=None):
     # 長度限制處理
     message_text = message[:5000] if len(message) > 5000 else message
     
-    # 優先檢查環境變數中的 GROUP_ID (推薦方式)
-    group_id = os.getenv('LINE_GROUP_ID', '').strip()
-    
     # 判斷發送模式（優先順序：Group ID > User ID > Broadcast）
-    if group_id:
-        # 模式 1: 群組推送 (Push to Group) - 最精準的方式
+    if group_id and group_id.strip():
+        # 模式 1: 群組推送 (Push to Group)
         url = "https://api.line.me/v2/bot/message/push"
         payload = {
-            "to": group_id, 
+            "to": group_id.strip(), 
             "messages": [{"type": "text", "text": message_text}]
         }
-        mode_name = f"群組推送 (Group ID: {group_id[:15]}...)"
+        mode_name = f"群組推送 (Group ID: {group_id[:10]}...)"
     elif user_id and user_id.strip():
         # 模式 2: 個人推送 (Push to User)
         url = "https://api.line.me/v2/bot/message/push"
@@ -95,12 +80,12 @@ def send_line(message, token, user_id=None):
         }
         mode_name = f"個人推送 (User ID: {user_id[:10]}...)"
     else:
-        # 模式 3: 廣播 (Broadcast) - 發送給所有好友和群組
+        # 模式 3: 廣播 (Broadcast)
         url = "https://api.line.me/v2/bot/message/broadcast"
         payload = {
             "messages": [{"type": "text", "text": message_text}]
         }
-        mode_name = "廣播 (Broadcast - 所有好友和群組)"
+        mode_name = "廣播 (Broadcast)"
     
     try: 
         r = requests.post(url, headers=headers, json=payload)

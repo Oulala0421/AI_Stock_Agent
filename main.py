@@ -161,7 +161,12 @@ def run_analysis(mode="post_market", dry_run=False):
         
         if Config['LINE_TOKEN']:
             print("   └─ LINE")
-            send_line(report_content, Config['LINE_TOKEN'], Config['LINE_USER_ID'])
+            send_line(
+                report_content, 
+                Config['LINE_TOKEN'], 
+                user_id=Config['LINE_USER_ID'],
+                group_id=Config.get('LINE_GROUP_ID')
+            )
     
     print("\n✅ 完成！")
 
