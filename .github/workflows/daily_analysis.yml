@@ -3,9 +3,9 @@ name: Daily AI Stock Analysis
 on:
   schedule:
     # Pre-Market: 13:30 UTC (9:30 PM Taiwan / 9:30 AM EST) - Just before open
-    - cron: '30 13 * * 1-5'
+    - cron: '30 13 * * *'
     # Post-Market: 21:00 UTC (5:00 AM Taiwan / 5:00 PM EST) - After close
-    - cron: '0 21 * * 1-5'
+    - cron: '0 21 * * *'
   workflow_dispatch:
     inputs:
       mode:
