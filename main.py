@@ -53,7 +53,7 @@ def run_analysis(mode="post_market", dry_run=False):
         report_content += "😴 美股今日休市，提供市場前瞻。\n"
         
     report_content += f"📊 市場: VIX {market_regime['vix']:.2f} | SPY {'🔥多頭' if market_regime['is_bullish'] else '❄️空頭'}\n"
-    report_content += f"📅 未來 30 天市場展望:\n{market_outlook}\n"
+    report_content += f"📅 未來 7 天市場展望:\n{market_outlook}\n"
     report_content += "=" * 40 + "\n"
     
     # 2. Analyze Stocks (Only if market is open)
