@@ -67,13 +67,17 @@ def run_analysis(mode="post_market", dry_run=False):
             # 獲取股票類型 (預設 Satellite)
             stock_type = STOCK_TYPES.get(symbol, "Satellite")
             
+            # Determine available pool
+            pools = Config['CAPITAL_ALLOCATION']
+            available_pool = pools.get('core_pool', 11900) if stock_type == "Core" else pools.get('satellite_pool', 5100)
+            
             conf_score = calculate_confidence_score(market_regime, quality_data, technical_data, sentiment, stock_type)
             
             # 生成 AI 簡報
             ai_text = generate_ai_briefing(symbol, data, news_text, sentiment, fund, "HOLDING", conf_score, stock_type, mode)
             
             # 計算倉位
-            shares, amount, stop_loss, signal = calculate_position_size(data['price'], data['volatility']['atr'], conf_score, stock_type)
+            shares, amount, stop_loss, signal = calculate_position_size(data['price'], data['volatility']['atr'], conf_score, stock_type, available_pool)
             my_cost = MY_COSTS.get(symbol, 0)
             
             # 詳細數據
@@ -110,6 +114,10 @@ def run_analysis(mode="post_market", dry_run=False):
             # 獲取股票類型
             stock_type = STOCK_TYPES.get(symbol, "Satellite")
             
+            # Determine available pool
+            pools = Config['CAPITAL_ALLOCATION']
+            available_pool = pools.get('core_pool', 11900) if stock_type == "Core" else pools.get('satellite_pool', 5100)
+            
             conf_score = calculate_confidence_score(market_regime, quality_data, technical_data, sentiment, stock_type)
             
             ai_text = generate_ai_briefing(symbol, data, news_text, sentiment, fund, "WATCHLIST", conf_score, stock_type, mode)
@@ -117,7 +125,7 @@ def run_analysis(mode="post_market", dry_run=False):
             # 詳細內容 (含分數與建議)
             report_content += f"🔹 {symbol} ({stock_type}|{conf_score:.0f}分|${data['price']:.2f})\n"
             report_content += ai_text + "\n"
-            shares, amount, stop_loss, signal = calculate_position_size(data['price'], data['volatility']['atr'], conf_score, stock_type)
+            shares, amount, stop_loss, signal = calculate_position_size(data['price'], data['volatility']['atr'], conf_score, stock_type, available_pool)
             report_content += f"💡 建議: {signal} | 凱利: ${amount:.0f}\n----------------\n"
 
     # 3. 市場掃描 (僅 Post-Market 執行)

@@ -238,7 +238,7 @@ def calculate_position_size(price, atr, confidence_score, stock_type="Satellite"
     # Type-specific logic
     if stock_type == "Core":
         # Core: Conservative DCA approach
-        core_pool = pools.get('core_pool', 10200)
+        core_pool = pools.get('core_pool', 11900)
         max_position = core_pool * limits.get('core_max_pct', 0.30)
         
         if confidence_score >= 55: # Relaxed threshold
@@ -255,76 +255,7 @@ def calculate_position_size(price, atr, confidence_score, stock_type="Satellite"
     
     else:  # Satellite
         # Satellite: Confidence-driven flexible sizing
-        satellite_pool = pools.get('satellite_pool', 6800)
-        max_position = satellite_pool * limits.get('satellite_max_pct', 0.25)
-        
-        if confidence_score >= 70:
-            kelly_pct = 0.35  # 35% of available pool - high conviction
-            signal = "BUY"
-        elif confidence_score >= 65:
-            kelly_pct = 0.25  # 25% of available pool
-            signal = "ACCUMULATE"
-        elif confidence_score >= 50:
-            kelly_pct = 0.15  # 15% of available pool - cautious add
-            signal = "HOLD"
-        else:
-            kelly_pct = 0.0
-            signal = "REDUCE" if confidence_score < 35 else "HOLD" # Lower sell threshold
-        
-        position_value = min(available_pool * kelly_pct, max_position)
-    
-    if position_value < price:  # Can't afford even 1 share
-        return 0, 0, stop_loss_price, "HOLD"
-    
-        # E. 輿情 (5%) - 降低權重
-        sent_mapped = (sentiment_score + 1) * 2.5  # -1~1 -> 0~5
-        score += sent_mapped
-    
-    # 一票否決 (Universal)
-    if quality_data.get('fraud_risk'): score = 0
-    
-    return max(0, min(100, score))
-
-def calculate_position_size(price, atr, confidence_score, stock_type="Satellite", available_pool=0):
-    """
-    計算建議倉位 - Core/Satellite 差異化策略
-    
-    Core: DCA 精神，緩慢定期加碼 (15%-20% of available pool)
-    Satellite: 信心驅動，彈性調整 (15%-35% of available pool)
-    
-    Returns: (shares, position_value, stop_loss_price, signal)
-    """
-    if atr == 0 or available_pool <= 0: 
-        return 0, 0, 0, "HOLD"
-    
-    pools = Config['CAPITAL_ALLOCATION']
-    limits = Config['POSITION_LIMITS']
-    
-    # 計算停損價
-    stop_loss_dist = atr * 2
-    stop_loss_price = price - stop_loss_dist
-    
-    # Type-specific logic
-    if stock_type == "Core":
-        # Core: Conservative DCA approach
-        core_pool = pools.get('core_pool', 10200)
-        max_position = core_pool * limits.get('core_max_pct', 0.30)
-        
-        if confidence_score >= 55: # Relaxed threshold
-            kelly_pct = 0.20  # 20% of available pool
-            signal = "BUY"
-        elif confidence_score >= 50:
-            kelly_pct = 0.15  # 15% of available pool
-            signal = "ACCUMULATE"
-        else:
-            kelly_pct = 0.0
-            signal = "HOLD"
-            
-        position_value = min(available_pool * kelly_pct, max_position)
-    
-    else:  # Satellite
-        # Satellite: Confidence-driven flexible sizing
-        satellite_pool = pools.get('satellite_pool', 6800)
+        satellite_pool = pools.get('satellite_pool', 5100)
         max_position = satellite_pool * limits.get('satellite_max_pct', 0.25)
         
         if confidence_score >= 70:
