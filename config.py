@@ -20,19 +20,23 @@ def load_config():
     
     # API Keys (Load from Env)
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
     TG_TOKEN = os.getenv("TG_TOKEN")
     TG_CHAT_ID = os.getenv("TG_CHAT_ID")
     LINE_TOKEN = os.getenv("LINE_TOKEN")
     LINE_USER_ID = os.getenv("LINE_USER_ID")
+    LINE_GROUP_ID = os.getenv("LINE_GROUP_ID")
     
     return {
         "TOTAL_CAPITAL": TOTAL_CAPITAL,
         "MAX_RISK_PCT": MAX_RISK_PCT,
         "GEMINI_API_KEY": GEMINI_API_KEY,
+        "PERPLEXITY_API_KEY": PERPLEXITY_API_KEY,
         "TG_TOKEN": TG_TOKEN,
         "TG_CHAT_ID": TG_CHAT_ID,
         "LINE_TOKEN": LINE_TOKEN,
         "LINE_USER_ID": LINE_USER_ID,
+        "LINE_GROUP_ID": LINE_GROUP_ID,
         "STRATEGY": config.get('strategy', {}),
         "MARKET": config.get('market', {}),
         "CAPITAL_ALLOCATION": config.get('capital_allocation', {}),

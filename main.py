@@ -37,8 +37,11 @@ def run_analysis(mode="post_market", dry_run=False):
     print(f"   SPY: ${market_regime['spy_price']:.2f} | Bullish: {market_regime['is_bullish']}")
     print(f"   VIX: {market_regime['vix']:.2f}")
     
-    # 0.2 Economic Calendar (Always run)
-    econ_events = get_economic_events()
+    # 0.2 Economic Calendar & Market Outlook
+    print("\n🔮 獲取 AI 市場展望...")
+    # Initialize NewsAgent early to fetch outlook
+    news_agent = NewsAgent()
+    market_outlook = news_agent.get_market_outlook()
     
     # 1. Prepare Report Header
     title_suffix = "盤前分析" if mode == "pre_market" else "盤後日報"
@@ -47,10 +50,10 @@ def run_analysis(mode="post_market", dry_run=False):
     
     report_content = f"🤖 【AI 投資{title_suffix} - GARP版】 🤖\n"
     if not market_is_open:
-        report_content += "😴 美股今日休市，提供市場概況。\n"
+        report_content += "😴 美股今日休市，提供市場前瞻。\n"
         
     report_content += f"📊 市場: VIX {market_regime['vix']:.2f} | SPY {'🔥多頭' if market_regime['is_bullish'] else '❄️空頭'}\n"
-    report_content += f"📅 本週大事:\n{econ_events}\n"
+    report_content += f"📅 未來 30 天市場展望:\n{market_outlook}\n"
     report_content += "=" * 40 + "\n"
     
     # 2. Analyze Stocks (Only if market is open)
@@ -65,9 +68,9 @@ def run_analysis(mode="post_market", dry_run=False):
         else:
             print(f"✅ 載入完成: 持股 {len(MY_HOLDINGS)} 檔 | 觀察 {len(MY_WATCHLIST)} 檔")
             
-            # Initialize Components
+            # Initialize Strategy
             strategy = GARPStrategy()
-            news_agent = NewsAgent()
+            # news_agent already initialized above
             
             # Analyze Holdings
             if MY_HOLDINGS:
