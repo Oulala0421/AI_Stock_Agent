@@ -1,19 +1,19 @@
+# Environment and Secrets
+.env
+service_account.json
+client_secret.json
+
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.env
-.venv
+.venv/
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
-
-# Google Sheets Secrets (CRITICAL)
-service_account.json
-client_secret.json
 
 # IDE
 .vscode/
@@ -21,3 +21,6 @@ client_secret.json
 
 # Logs
 *.log
+
+# Legacy Files (Archived Old Versions)
+legacy/
