@@ -12,6 +12,7 @@ class NewsAgent:
     - Defensive programming: graceful degradation if API key missing
     - Retry logic for transient failures
     - Cost optimization: designed to be called selectively (PASS/WATCHLIST only)
+    - Market Outlook: fetches upcoming earnings and macro events
     """
     
     def __init__(self):
@@ -41,6 +42,35 @@ class NewsAgent:
         except Exception as e:
             print(f"❌ News fetch failed for {symbol}: {e}")
             return "News unavailable (API error)"
+
+    def get_market_outlook(self) -> str:
+        """
+        獲取未來 30 天市場展望 (財報、總經、重大事件)
+        """
+        if not self.api_key:
+            return "Market outlook unavailable (API key not configured)."
+            
+        prompt = """
+        作為資深美股分析師，請整理「未來 30 天」美股市場最重要的財經事件與財報發布。
+        
+        重點關注：
+        1. **重量級財報**：特別是科技巨頭 (如 NVDA, AAPL, MSFT, TSLA 等) 或 S&P 500 重要成分股。請註明發布日期。
+        2. **總經數據**：CPI, PPI, 非農就業數據 (Nonfarm), FOMC 會議利率決策。
+        3. **潛在影響**：簡述這些事件可能如何影響市場趨勢。
+        
+        格式要求：
+        - 使用繁體中文（台灣）。
+        - 條列式，按「日期先後」排序，最多 5-7 點。
+        - 每點格式：`[MM/DD] 事件名稱 - 關鍵看點`
+        - 使用 emoji (📅, 💰, ⚠️) 增加可讀性。
+        - 保持簡潔有力。
+        """
+        
+        try:
+            return self._fetch_from_perplexity(prompt, max_tokens=600)
+        except Exception as e:
+            print(f"❌ Market outlook fetch failed: {e}")
+            return "暫無法獲取市場展望。"
     
     @retry(
         stop=stop_after_attempt(3),
@@ -49,13 +79,15 @@ class NewsAgent:
     )
     def _fetch_news_with_retry(self, symbol: str) -> str:
         """
-        Internal method with retry logic for API calls.
-        
-        Raises:
-            Exception: If all retries exhausted or non-retryable error occurs
+        Internal method with retry logic for API calls (for single stock).
         """
         prompt = self._build_prompt(symbol)
-        
+        return self._fetch_from_perplexity(prompt)
+
+    def _fetch_from_perplexity(self, prompt: str, max_tokens: int = 300) -> str:
+        """
+        Generic method to call Perplexity API.
+        """
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -73,23 +105,20 @@ class NewsAgent:
                     "content": prompt
                 }
             ],
-            "max_tokens": 300,  # Keep it concise
-            "temperature": 0.2  # Lower temperature for factual responses
+            "max_tokens": max_tokens,
+            "temperature": 0.2
         }
         
         response = requests.post(
             self.endpoint,
             headers=headers,
             json=payload,
-            timeout=15  # 15 second timeout
+            timeout=30  # Increased timeout for longer queries
         )
         
-        # Raise for HTTP errors (4xx, 5xx)
         response.raise_for_status()
-        
         data = response.json()
         
-        # Extract content from response
         if "choices" in data and len(data["choices"]) > 0:
             content = data["choices"][0]["message"]["content"]
             return self._format_news_output(content)
@@ -99,12 +128,6 @@ class NewsAgent:
     def _build_prompt(self, symbol: str) -> str:
         """
         Build optimized prompt for financial news extraction.
-        
-        Args:
-            symbol: Stock ticker symbol
-        
-        Returns:
-            str: Formatted prompt for Perplexity API
         """
         return f"""Analyze {symbol} stock with focus on GARP strategy factors:
 
@@ -112,32 +135,19 @@ class NewsAgent:
 2. Recent earnings, revenue growth, or guidance updates
 3. Major catalysts (product launches, partnerships, regulatory changes)
 
-Provide EXACTLY 3 concise bullet points (max 1 sentence each). Be factual and data-driven."""
+Provide EXACTLY 3 concise bullet points (max 1 sentence each). Be factual and data-driven. Output in Traditional Chinese (Taiwan)."""
     
     def _format_news_output(self, content: str) -> str:
         """
         Clean and format the API response into mobile-friendly output.
-        
-        Args:
-            content: Raw content from Perplexity API
-        
-        Returns:
-            str: Formatted news summary
         """
-        # Clean up the content
         lines = content.strip().split('\n')
-        
-        # Filter out empty lines and ensure we have bullet points
         formatted_lines = []
         for line in lines:
             line = line.strip()
             if line:
-                # Ensure each line starts with a bullet point
-                if not line.startswith('-') and not line.startswith('•'):
+                if not line.startswith('-') and not line.startswith('•') and not line.startswith('1.'):
                     line = f"- {line}"
                 formatted_lines.append(line)
-        
-        # Limit to 3 bullet points maximum
-        formatted_lines = formatted_lines[:3]
         
         return '\n'.join(formatted_lines) if formatted_lines else "No significant news"

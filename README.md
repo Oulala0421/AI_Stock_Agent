@@ -1,8 +1,8 @@
-# 🤖 AI Stock Agent
+# 🤖 AI Stock Agent (GARP + News Intelligence)
 
-**Academic-Grade Core/Satellite Investment Strategy with Daily Telegram & LINE Notifications**
+**Academic-Grade Core/Satellite Investment Strategy with AI-Powered News & Multi-Channel Notifications**
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub Actions](https://img.shields.io/badge/CI/CD-GitHub_Actions-2088FF?logo=github-actions)](https://github.com/features/actions)
 
@@ -10,58 +10,28 @@
 
 ## 📊 Overview
 
-AI Stock Agent is a quantitative investment system that implements a **Core/Satellite portfolio strategy** based on academic research from Fama-French, Carhart, and modern factor investing literature. The system analyzes stocks daily, generates AI-powered briefings using Gemini API, and sends notifications via Telegram and LINE.
+AI Stock Agent 是一個結合**量化策略 (GARP)** 與 **AI 新聞情報 (Perplexity)** 的自動化投資分析系統。它每天自動分析持股與觀察清單，生成專業的投資報告，並透過 **LINE 群組** 與 **Telegram** 發送通知。
 
 ### Key Features
 
-✨ **Dual-Formula Scoring System**
-- **Core (70%)**: Long-term ETF holdings with DCA (Dollar Cost Averaging)
-- **Satellite (30%)**: Alpha-seeking individual stocks with flexible position sizing
+✨ **GARP 核心/衛星策略**
+- **Core (70%)**: 長期持有 ETF，強調低成本與穩定性
+- **Satellite (30%)**: 追求 Alpha 的個股，使用 GARP (Growth at a Reasonable Price) 模型評分
 
-📈 **Multi-Factor Analysis**
-- Value (HML) - Price-to-intrinsic-value ratios
-- Momentum (UMD) - Dual momentum strategy
-- Quality (RMW) - ROE and profitability metrics
-- Market Sentiment - VIX regime analysis
+🧠 **AI News Intelligence**
+- **Perplexity AI 整合**: 自動搜尋並摘要個股最新重大新聞
+- **智能成本控管**: 僅針對評級為 `PASS` 或 `WATCHLIST` 的股票獲取新聞
+- **市場情緒分析**: 結合 VIX 與 SPY 趨勢判斷市場體質
 
-🔬 **Academic Validation**
-- 10-year stress test (2014-2024) with **CAGR 16.52%**
-- Monte Carlo simulation (100,000 iterations) for risk assessment
-- Tested against 2015 Flash Crash, 2018 Trade War, 2020 COVID, 2022 Bear Market
+📱 **多管道通知系統**
+- **LINE 群組推送**: 支援 Webhook 自動獲取群組 ID，將報告發送到指定群組
+- **Telegram Bot**: 發送詳細的 Markdown 格式報告
+- **休市日簡報**: 美股休市時自動發送市場概況 (VIX/SPY)，不中斷服務
 
-🤖 **AI Integration**
-- Google Gemini API for investment briefings
-- Sentiment analysis with VADER
-- RSI Percentile Ranking (dynamic technical analysis)
-
-📱 **Daily Notifications**
-- Telegram (detailed private reports)
-- LINE (public-friendly summaries)
-- Scheduled via GitHub Actions (Taiwan Time 21:30)
-
----
-
-## 🎯 Performance (Backtest 2014-2024)
-
-| Metric | Value |
-|--------|-------|
-| **CAGR** | 16.52% |
-| **Max Drawdown** | -21.2% (2022 Bear Market) |
-| **Sharpe Ratio** | 0.91 |
-| **Total Return** | +387.89% |
-| **95% VaR** (1-year forward) | -13.3% |
-| **Bankruptcy Risk** | 0.00% |
-
-### Stress Test Results
-
-| Event | Return | Evaluation |
-|-------|--------|-----------|
-| 2015 Flash Crash | +2.3% | ✅ Resilient |
-| 2018 Trade War | -8.1% | ⚠️ Moderate Impact |
-| 2020 COVID | -15.7% | ✅ V-Shape Recovery |
-| 2022 Bear Market | **-21.2%** | ❌ Maximum Stress |
-
-📄 Full analysis: [`stress_test/stress_test_report.md`](stress_test/stress_test_report.md)
+⚙️ **自動化運維**
+- **GitHub Actions**: 每日定時執行 (包含週末)
+- **Render Webhook**: 用於自動獲取 LINE 群組 ID
+- **Google Sheets**: 雲端管理持股與觀察清單
 
 ---
 
@@ -69,256 +39,116 @@ AI Stock Agent is a quantitative investment system that implements a **Core/Sate
 
 ```
 AI_Stock_Agent/
-├── main.py                  # Entry point (pre_market / post_market modes)
-├── strategy.py              # Core/Satellite scoring formulas
-├── market_data.py           # yfinance data fetching + technical indicators
-├── notifier.py              # Telegram & LINE notification senders
-├── sheet_manager.py         # Google Sheets integration (holdings/watchlist)
-├── config.yaml              # Strategy parameters
-├── .env                     # API keys (local only, not in git)
+├── main.py                  # 主程式 (整合策略、新聞、通知)
+├── garp_strategy.py         # GARP 策略邏輯 (Valuation, Growth, Quality)
+├── news_agent.py            # Perplexity AI 新聞代理人
+├── notifier.py              # LINE & Telegram 通知模組
+├── line_webhook_server.py   # Flask Webhook Server (用於取得群組 ID)
+├── market_data.py           # yfinance 數據獲取
+├── sheet_manager.py         # Google Sheets 連接器
+├── config.py                # 設定管理
+├── .env                     # API Keys (不在此 repo 中)
 │
-├── docs/
-│   ├── setup_guide.md       # Step-by-step setup instructions
-│   └── troubleshooting.md   # Common issues & solutions
-│
-├── stress_test/             # Academic analysis & backtesting
-│   ├── run_stress_test.py   # 10-year backtest + Monte Carlo
-│   ├── formula_analysis_report.md  # Literature review (Fama-French, etc.)
-│   └── stress_test_report.md       # Backtest results
+├── docs/                    # 詳細文件
+│   ├── LINE_INTEGRATION_GUIDE.md  # LINE 群組整合指南
+│   ├── RENDER_DEPLOYMENT_GUIDE.md # Render 部署教學
+│   └── ...
 │
 └── .github/workflows/
-    └── daily_analysis.yml   # Automated daily notifications (21:30 Taiwan Time)
+    └── daily_analysis.yml   # 每日自動執行排程
 ```
 
 ---
 
 ## 🚀 Quick Start
 
-### Prerequisites
-
-- Python 3.8+
-- Google Sheets with Holdings/Watchlist (see [`docs/setup_guide.md`](docs/setup_guide.md))
+### 1. 環境準備
+- Python 3.9+
+- Google Sheets (格式參考 `docs/setup_guide.md`)
 - API Keys:
-  - **Gemini API** (for AI briefings)
-  - **Telegram Bot** (for notifications)
-  - **LINE Messaging API** (optional)
-  - **Google Cloud** (for Sheets access)
+  - **Perplexity API** (新聞摘要)
+  - **LINE Messaging API** (通知)
+  - **Telegram Bot** (通知)
+  - **Google Cloud** (Sheets 存取)
 
-### Installation
-
-#### 1. Clone Repository
+### 2. 安裝
 ```bash
 git clone https://github.com/Oulala0421/AI_Stock_Agent.git
 cd AI_Stock_Agent
-```
-
-#### 2. Setup Virtual Environment (Windows)
-```powershell
-.\setup_venv.ps1
-```
-
-Or manually:
-```bash
-python -m venv venv
-.\venv\Scripts\activate  # Windows
 pip install -r requirements.txt
 ```
 
-#### 3. Configure API Keys
-Copy `.env.example` to `.env` and fill in your credentials:
-```bash
-cp .env.example .env
-```
-
-Edit .env:
+### 3. 設定 .env
+複製 `.env.example` 並填入您的金鑰：
 ```env
-GEMINI_API_KEY=your_gemini_api_key
-TG_TOKEN=your_telegram_bot_token
-TG_CHAT_ID=your_telegram_chat_id
-LINE_TOKEN=your_line_channel_token
-LINE_USER_ID=your_line_user_id
-GCP_JSON={"type":"service_account", ...}
+PERPLEXITY_API_KEY=pplx-xxxxxxxx...
+LINE_TOKEN=xxxxxxxx...
+LINE_GROUP_ID=Cxxxxxxxx...  # 執行 line_webhook_server.py 取得
+TG_TOKEN=xxxxxxxx...
+TG_CHAT_ID=xxxxxxxx...
+GCP_JSON={...}
 ```
 
-📘 **Detailed Setup Guide**: [`docs/setup_guide.md`](docs/setup_guide.md)
+### 4. 取得 LINE 群組 ID
+詳見 [LINE_INTEGRATION_GUIDE.md](docs/LINE_INTEGRATION_GUIDE.md)
+1. 部署 `line_webhook_server.py` 到 Render
+2. 設定 LINE Webhook URL
+3. 將 Bot 加入群組並發送訊息
+4. 從 Logs 取得 Group ID
 
-#### 4. Test Locally
+### 5. 執行測試
 ```bash
-# Test API connections
-python tests/test_notifications.py
+# 測試 LINE 群組發送
+python test_line_group.py
 
-# Dry run (no notifications sent)
+# 執行完整分析 (Dry Run)
 python main.py --dry-run
-
-# Real run (post-market analysis)
-python main.py
 ```
 
 ---
 
-## ⚙️ Configuration
+## 📈 Strategy Logic (GARP)
 
-### Strategy Parameters (`config.yaml`)
+系統根據以下指標進行評分 (0-10 分)：
 
-```yaml
-capital_allocation:
-  core_pool: 11900        # 70% - Academic standard (Vanguard 2016)
-  satellite_pool: 5100    # 30%
+1.  **Valuation (估值)**: PEG Ratio, P/E vs Industry
+2.  **Growth (成長)**: Revenue Growth, EPS Growth
+3.  **Quality (品質)**: ROE, Net Margin, Debt/Equity
+4.  **Technical (技術)**: RSI, Moving Averages
 
-strategy:
-  core:
-    threshold_buy: 55     # Relaxed for DCA
-    threshold_sell: 35
-  satellite:
-    threshold_buy: 70     # Strict for alpha
-    threshold_accumulate: 65
-    threshold_reduce: 35
-```
-
-### Google Sheets Format
-
-**Holdings Sheet**:
-| Symbol | Type | Cost |
-|--------|------|------|
-| VOO | Core | 450 |
-| NVDA | Satellite | 120 |
-
-**Watchlist Sheet**:
-| Symbol | Type |
-|--------|------|
-| PLTR | Satellite |
-| QQQ | Core |
+**評級標準**:
+- 🟢 **PASS**: 總分 >= 7 且無重大紅旗
+- 🟡 **WATCHLIST**: 總分 >= 5
+- 🔴 **REJECT**: 總分 < 5 或有重大紅旗
 
 ---
 
-## 📱 GitHub Actions Automation
+## 🤖 AI News Agent
 
-The system runs automatically at **21:30 Taiwan Time** (13:30 UTC) via GitHub Actions.
-
-### Setup GitHub Secrets
-
-1. Go to `Settings` → `Secrets and variables` → `Actions`
-2. Add the following secrets:
-   - `GEMINI_API_KEY`
-   - `TG_TOKEN`
-   - `TG_CHAT_ID`
-   - `LINE_TOKEN`
-   - `LINE_USER_ID`
-   - `GCP_JSON`
-
-### Manual Trigger
-
-Go to `Actions` → `Daily AI Stock Analysis` → `Run workflow`
+- **Engine**: Perplexity AI (`llama-3.1-sonar-small-128k-online`)
+- **Prompting**: 金融分析師角色設定，專注於重大催化劑 (Catalysts) 與風險
+- **Cost Control**:
+  - ✅ PASS/WATCHLIST: 獲取新聞
+  - ❌ REJECT: 跳過新聞 (節省 API 額度)
 
 ---
 
-## 🧪 Stress Testing
+## 📅 Automation Schedule
 
-Run the 10-year backtest + Monte Carlo simulation:
+系統透過 GitHub Actions 每日執行：
 
-```bash
-python -m stress_test.run_stress_test
-```
-
-Output:
-- Terminal: CAGR, Max DD, Sharpe Ratio
-- Report: `stress_test/stress_test_report.md`
-
-**Monte Carlo Settings**:
-- Iterations: 100,000 (academic standard per Jorion 2007, Hull 2018)
-- Simulation period: 1 year (252 trading days)
-- Method: GBM (Geometric Brownian Motion)
-
----
-
-## 📚 Academic Foundation
-
-This system is built on peer-reviewed financial research:
-
-### Core Theories
-- **Fama-French 3/5-Factor Models** (1993, 2015) - Size, Value, Profitability
-- **Carhart 4-Factor** (1997) - Momentum
-- **Dual Momentum** (Antonacci 2014) - Absolute + Relative momentum
-- **Core-Satellite Strategy** (Vanguard 2016) - 70/30 allocation
-- **Kelly Criterion** (1956) - Optimal position sizing
-
-### Technical Innovations
-- **RSI Percentile Ranking**: Dynamic overbought/oversold thresholds
-- **Bollinger Band Positioning**: Value entry timing
-- **VIX Regime Analysis**: Market sentiment quantification
-
-📄 Full literature review: [`stress_test/formula_analysis_report.md`](stress_test/formula_analysis_report.md)
-
----
-
-## 🔧 Troubleshooting
-
-### Common Issues
-
-**Gemini API Error**:
-```
-⚠️ AI 生成最終失敗: ClientError
-```
-→ Check API key validity & quota
-
-**Telegram 404 Error**:
-```
-❌ TG 發送失敗: {"ok":false,"error_code":404}
-```
-→ Verify Chat ID (should be a number, not username)
-
-**LINE Invalid Property**:
-```
-❌ LINE 發送失敗: "to" property invalid
-```
-→ Use User ID (starts with `U`), not Display Name
-
-📘 **Full Troubleshooting Guide**: [`docs/troubleshooting.md`](docs/troubleshooting.md)
-
----
-
-## 📜 License
-
-MIT License - See [LICENSE](LICENSE)
+- **時間**: 21:30 (台灣時間) / 13:30 (UTC)
+- **頻率**: 每天 (Every Day)
+- **行為**:
+  - **開市日**: 完整個股分析 + 新聞 + 報告
+  - **休市日**: 市場概況簡報 (VIX/SPY) + 休市提示
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please:
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+歡迎提交 Pull Request 或 Issue！
 
----
+## 📜 License
 
-## ⚠️ Disclaimer
-
-**This software is for educational and research purposes only.**
-- Not financial advice
-- Past performance does not guarantee future results
-- Use at your own risk
-- Authors assume no liability for financial losses
-
----
-
-## 📞 Contact
-
-**Project Maintainer**: [@Oulala0421](https://github.com/Oulala0421)
-
-**Issues**: [GitHub Issues](https://github.com/Oulala0421/AI_Stock_Agent/issues)
-
----
-
-## 🌟 Acknowledgments
-
-- **Gemini API** by Google
-- **yfinance** by Ran Aroussi
-- **Fama-French Data Library**
-- Academic research by Eugene Fama, Kenneth French, Mark Carhart, Clifford Asness
-
----
-
-<p align="center">Made with ❤️ and 📊 by quants, for quants</p>
+MIT License
