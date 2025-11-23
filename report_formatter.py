@@ -1,8 +1,13 @@
 from data_models import StockHealthCard, OverallStatus
+from typing import Optional
 
-def format_stock_report(card: StockHealthCard) -> str:
+def format_stock_report(card: StockHealthCard, news_summary: Optional[str] = None) -> str:
     """
     Formats a StockHealthCard into a readable string optimized for mobile (Telegram/LINE).
+    
+    Args:
+        card: StockHealthCard containing analysis results
+        news_summary: Optional news intelligence from Perplexity AI
     """
     # 1. Header
     status_emoji = {
@@ -27,13 +32,7 @@ def format_stock_report(card: StockHealthCard) -> str:
         
     tags_str = " | ".join(filtered_tags)
     
-    # 3. Red Flags Section
-    red_flags_section = ""
-    if card.red_flags:
-        red_flags_list = "\n".join([f"  - {flag}" for flag in card.red_flags])
-        red_flags_section = f"\n⚠️ WARNINGS:\n{red_flags_list}"
-        
-    # 4. Data Summary
+    # 3. Data Summary
     # Extract key metrics safely
     roe = card.quality_check.get('roe')
     roe_str = f"{roe*100:.1f}%" if roe is not None else "N/A"
@@ -46,11 +45,22 @@ def format_stock_report(card: StockHealthCard) -> str:
     
     summary_line = f"📊 ROE: {roe_str} | PEG: {peg_str} | Debt/Eq: {de_str}"
     
-    # 5. Construct Final Message
+    # 4. News Section (NEW)
+    news_section = ""
+    if news_summary:
+        news_section = f"\n\n📰 MARKET INTELLIGENCE:\n{news_summary}"
+    
+    # 5. Red Flags Section
+    red_flags_section = ""
+    if card.red_flags:
+        red_flags_list = "\n".join([f"  - {flag}" for flag in card.red_flags])
+        red_flags_section = f"\n\n⚠️ WARNINGS:\n{red_flags_list}"
+        
+    # 6. Construct Final Message
     report = f"""
 {header}
 {tags_str}
-{summary_line}{red_flags_section}
+{summary_line}{news_section}{red_flags_section}
 """.strip()
 
     return report
