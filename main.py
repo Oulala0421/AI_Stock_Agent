@@ -61,7 +61,7 @@ def run_analysis(mode="post_market", dry_run=False):
     title_suffix = "盤前分析" if mode == "pre_market" else "盤後日報"
     if not market_is_open: title_suffix += " (休市)"
     
-    report_content = f"🤖 【AI 投資{title_suffix} - GARP V2】 🤖\n"
+    report_content = f"⚠️ 程式還在修改中，看看就好 ⚠️\n🤖 【AI 投資{title_suffix} - GARP V2】 🤖\n"
     if not market_is_open:
         report_content += "😴 美股今日休市，提供市場前瞻。\n"
         
