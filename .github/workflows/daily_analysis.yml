@@ -4,8 +4,8 @@ on:
   schedule:
     # Pre-Market: 23:00 UTC (7:00 AM Taiwan next day) - Morning report
     - cron: '0 23 * * *'
-    # Post-Market: 21:00 UTC (5:00 AM Taiwan / 5:00 PM EST) - After close
-    - cron: '0 21 * * *'
+    # Post-Market: 13:30 UTC (9:30 PM Taiwan) - Evening report
+    - cron: '30 13 * * *'
   workflow_dispatch:
     inputs:
       mode:
