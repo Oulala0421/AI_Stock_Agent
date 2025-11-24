@@ -5,11 +5,14 @@ from typing import Optional
 
 class NewsAgent:
     """
-    News Intelligence Agent (V2) - Fact/Opinion Decoupled
+    News Intelligence Agent using Perplexity AI's sonar-pro model.
+    Provides real-time market intelligence for GARP strategy decisions.
     
-    Changes in V2:
-    - get_market_outlook now REQUIRES 'events_data' (Hard Facts)
-    - AI role restricted to 'Analyst' (Opinion), not 'Researcher' (Fact Retrieval)
+    Features:
+    - Defensive programming: graceful degradation if API key missing
+    - Retry logic for transient failures
+    - Cost optimization: designed to be called selectively (PASS/WATCHLIST only)
+    - Market Outlook: fetches upcoming earnings and macro events
     """
     
     def __init__(self):
@@ -23,7 +26,14 @@ class NewsAgent:
     def get_stock_news(self, symbol: str) -> str:
         """
         Fetch concise news summary for a given stock symbol.
+        
+        Args:
+            symbol: Stock ticker symbol (e.g., "AAPL")
+        
+        Returns:
+            str: Formatted news summary (max 3 bullet points) or fallback message
         """
+        # Cost Control: If no API key, return safe fallback immediately
         if not self.api_key:
             return "News unavailable (API key not configured)"
         
@@ -33,49 +43,53 @@ class NewsAgent:
             print(f"❌ News fetch failed for {symbol}: {e}")
             return "News unavailable (API error)"
 
-    def get_market_outlook(self, events_data: str) -> str:
+    def get_market_outlook(self) -> str:
         """
-        V2: Analyze market outlook based on PROVIDED hard data events.
-        We no longer ask AI to search for events to avoid hallucinations.
-        
-        Args:
-            events_data: A string containing confirmed economic events/earnings (Facts).
+        獲取未來 7 天市場展望 (簡化版：上調/下調/波動注意)
         """
         if not self.api_key:
-            return "AI analysis unavailable (API key not configured)."
+            return "Market outlook unavailable (API key not configured)."
             
-        prompt = f"""
-        你是一位資深總體經濟與美股策略師。
+        prompt = """
+        作為資深美股分析師，請整理「未來 7 天」美股市場最重要的財經事件與財報發布。
         
-        以下是程式碼抓取的「未來 7 天確認財經日曆」(Hard Data/Facts)：
-        ---------------------
-        {events_data}
-        ---------------------
+        請將事件歸納為以下三類，並**嚴格移除所有引用來源標記**（如 [1][2]）：
         
-        任務指令：
-        1. 請**僅根據上述提供的事件**，分析本週市場可能的波動風險與機會。
-        2. **絕對不要**重新列出事件清單（我已經有了），直接給出你的「觀點 (Opinion)」與「策略建議」。
-        3. 如果上述清單顯示「無重大事件」，請分析在缺乏催化劑的情況下，市場可能關注的技術面或資金流向。
-        4. 分析重點：VIX 波動預警、板塊輪動影響 (Sector Rotation)。
-        5. 保持簡潔 (150字以內)，使用繁體中文 (台灣)。
+        📈 **上調注意** (利多潛力/強勢板塊)
+        📉 **下調注意** (利空風險/弱勢板塊)
+        ⚡ **波動注意** (重大財報/總經數據/會議)
+        
+        格式要求：
+        - 使用繁體中文（台灣）。
+        - 每一類別下列出 1-2 個最重要事件。
+        - 若某類別無重大事件，可略過。
+        - 每行格式：`[MM/DD] 事件名稱 - 簡短關鍵影響`
+        - **絕對不要**包含 [1], [2] 等引用標記。
+        - 保持極度簡潔，不要長篇大論。
         """
         
         try:
-            return self._fetch_from_perplexity(prompt, max_tokens=400)
+            return self._fetch_from_perplexity(prompt, max_tokens=600)
         except Exception as e:
-            print(f"❌ Market outlook analysis failed: {e}")
-            return "暫無法進行 AI 市場解讀。"
+            print(f"❌ Market outlook fetch failed: {e}")
+            return "暫無法獲取市場展望。"
     
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((requests.exceptions.RequestException,))
+        retry=retry_if_exception_type((requests.exceptions.RequestException, requests.exceptions.Timeout))
     )
     def _fetch_news_with_retry(self, symbol: str) -> str:
+        """
+        Internal method with retry logic for API calls (for single stock).
+        """
         prompt = self._build_prompt(symbol)
         return self._fetch_from_perplexity(prompt)
 
     def _fetch_from_perplexity(self, prompt: str, max_tokens: int = 300) -> str:
+        """
+        Generic method to call Perplexity API.
+        """
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -86,7 +100,7 @@ class NewsAgent:
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are a financial analyst specializing in GARP investing. Provide concise, actionable market intelligence."
+                    "content": "You are a financial analyst specializing in GARP (Growth at a Reasonable Price) investing. Provide concise, actionable market intelligence."
                 },
                 {
                     "role": "user",
@@ -101,7 +115,7 @@ class NewsAgent:
             self.endpoint,
             headers=headers,
             json=payload,
-            timeout=30
+            timeout=30  # Increased timeout for longer queries
         )
         
         response.raise_for_status()
@@ -109,21 +123,26 @@ class NewsAgent:
         
         if "choices" in data and len(data["choices"]) > 0:
             content = data["choices"][0]["message"]["content"]
-            # Only format bullet points for stock news, pass through for outlook if it's a paragraph
-            if "- " in content or "1. " in content:
-                return self._format_news_output(content)
-            return content
+            return self._format_news_output(content)
         else:
             raise ValueError("Invalid API response structure")
     
     def _build_prompt(self, symbol: str) -> str:
+        """
+        Build optimized prompt for financial news extraction.
+        """
         return f"""Analyze {symbol} stock with focus on GARP strategy factors:
+
 1. Latest news and market sentiment (bullish/bearish)
 2. Recent earnings, revenue growth, or guidance updates
 3. Major catalysts (product launches, partnerships, regulatory changes)
-Provide EXACTLY 3 concise bullet points (max 1 sentence each). Be factual. Output in Traditional Chinese (Taiwan)."""
+
+Provide EXACTLY 3 concise bullet points (max 1 sentence each). Be factual and data-driven. Output in Traditional Chinese (Taiwan)."""
     
     def _format_news_output(self, content: str) -> str:
+        """
+        Clean and format the API response into mobile-friendly output.
+        """
         lines = content.strip().split('\n')
         formatted_lines = []
         for line in lines:
@@ -132,4 +151,5 @@ Provide EXACTLY 3 concise bullet points (max 1 sentence each). Be factual. Outpu
                 if not line.startswith('-') and not line.startswith('•') and not line.startswith('1.'):
                     line = f"- {line}"
                 formatted_lines.append(line)
+        
         return '\n'.join(formatted_lines) if formatted_lines else "No significant news"
