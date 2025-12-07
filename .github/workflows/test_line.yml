@@ -1,0 +1,154 @@
+name: Test LINE Notification
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test_line:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests python-dotenv
+    
+    - name: Check Secrets Availability
+      run: |
+        echo "🔍 檢查 GitHub Secrets 可用性..."
+        echo "LINE_TOKEN exists: ${{ secrets.LINE_TOKEN != '' }}"
+        echo "LINE_USER_ID exists: ${{ secrets.LINE_USER_ID != '' }}"
+        echo "LINE_GROUP_ID exists: ${{ secrets.LINE_GROUP_ID != '' }}"
+    
+    - name: Debug Environment Variables
+      env:
+        LINE_TOKEN: ${{ secrets.LINE_TOKEN }}
+        LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        LINE_GROUP_ID: ${{ secrets.LINE_GROUP_ID }}
+      run: |
+        echo "🔍 檢查環境變數載入狀態..."
+        [ -z "$LINE_TOKEN" ] && echo "❌ LINE_TOKEN is EMPTY" || echo "✅ LINE_TOKEN loaded (${#LINE_TOKEN} chars)"
+        [ -z "$LINE_USER_ID" ] && echo "❌ LINE_USER_ID is EMPTY" || echo "✅ LINE_USER_ID: $LINE_USER_ID"
+        [ -z "$LINE_GROUP_ID" ] && echo "❌ LINE_GROUP_ID is EMPTY" || echo "✅ LINE_GROUP_ID: $LINE_GROUP_ID"
+    
+    - name: Test LINE Bot Info
+      env:
+        LINE_TOKEN: ${{ secrets.LINE_TOKEN }}
+      run: |
+        echo "🤖 測試 LINE Bot Token 有效性..."
+        python -c "
+        import requests
+        import os
+        import sys
+        
+        token = os.getenv('LINE_TOKEN')
+        if not token:
+            print('❌ LINE_TOKEN 環境變數未設定')
+            sys.exit(1)
+        
+        headers = {'Authorization': f'Bearer {token}'}
+        r = requests.get('https://api.line.me/v2/bot/info', headers=headers)
+        
+        if r.status_code == 200:
+            info = r.json()
+            print(f'✅ Bot 驗證成功')
+            print(f'   Bot Name: {info.get(\"displayName\", \"N/A\")}')
+            print(f'   Bot ID: {info.get(\"userId\", \"N/A\")[:20]}...')
+        else:
+            print(f'❌ Bot 驗證失敗: HTTP {r.status_code}')
+            print(f'   Response: {r.text}')
+            sys.exit(1)
+        "
+    
+    - name: Test LINE Message Send
+      env:
+        LINE_TOKEN: ${{ secrets.LINE_TOKEN }}
+        LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        LINE_GROUP_ID: ${{ secrets.LINE_GROUP_ID }}
+      run: |
+        echo "📤 測試 LINE 訊息發送..."
+        python -c "
+        import requests
+        import os
+        import sys
+        from datetime import datetime
+        
+        token = os.getenv('LINE_TOKEN')
+        user_id = os.getenv('LINE_USER_ID')
+        group_id = os.getenv('LINE_GROUP_ID')
+        
+        if not token:
+            print('❌ LINE_TOKEN 未設定')
+            sys.exit(1)
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {token}'
+        }
+        
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')
+        test_message = f'🧪 GitHub Actions LINE 測試\n時間: {timestamp}\n這是從 GitHub Actions 發送的測試訊息'
+        
+        # 測試群組發送
+        if group_id:
+            print(f'📌 測試群組發送 (ID: {group_id[:10]}...)')
+            url = 'https://api.line.me/v2/bot/message/push'
+            payload = {
+                'to': group_id,
+                'messages': [{'type': 'text', 'text': test_message}]
+            }
+            r = requests.post(url, headers=headers, json=payload)
+            
+            if r.status_code == 200:
+                print('✅ 群組訊息發送成功')
+            else:
+                print(f'❌ 群組訊息發送失敗: HTTP {r.status_code}')
+                print(f'   Response: {r.text}')
+                sys.exit(1)
+        else:
+            print('⚠️ LINE_GROUP_ID 未設定，跳過群組測試')
+        
+        # 測試個人發送
+        if user_id:
+            print(f'📌 測試個人發送 (ID: {user_id[:10]}...)')
+            url = 'https://api.line.me/v2/bot/message/push'
+            payload = {
+                'to': user_id,
+                'messages': [{'type': 'text', 'text': test_message}]
+            }
+            r = requests.post(url, headers=headers, json=payload)
+            
+            if r.status_code == 200:
+                print('✅ 個人訊息發送成功')
+            else:
+                print(f'❌ 個人訊息發送失敗: HTTP {r.status_code}')
+                print(f'   Response: {r.text}')
+        else:
+            print('⚠️ LINE_USER_ID 未設定，跳過個人測試')
+        "
+    
+    - name: Summary
+      if: always()
+      run: |
+        echo ""
+        echo "=========================================="
+        echo "✅ LINE 通知測試完成"
+        echo "=========================================="
+        echo ""
+        echo "如果以上所有步驟都成功："
+        echo "  → GitHub Secrets 設定正確"
+        echo "  → LINE Bot 已正常運作"
+        echo "  → 可以開始使用 daily_analysis workflow"
+        echo ""
+        echo "如果有失敗："
+        echo "  → 請檢查對應步驟的錯誤訊息"
+        echo "  → 確認 Repository Secrets 設定是否正確"
+        echo ""

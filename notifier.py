@@ -43,12 +43,14 @@ def send_telegram_chunked(message, token, chat_id):
 
 def send_line(message, token, user_id=None, group_id=None):
     """
-    LINE 發送器 - 支援多種發送模式
+    LINE 發送器 - 支援多種發送模式和訊息自動分段
     
     發送優先順序：
     1. **群組推送** (參數 group_id) - 優先
     2. **個人推送** (參數 user_id) - 次之
     3. **廣播** (都不提供) - 最後
+    
+    限制：LINE 單則訊息上限 5000 字元
     """
     if not token:
         print("⚠️ LINE_TOKEN 未設定，跳過 LINE 發送")
@@ -59,67 +61,86 @@ def send_line(message, token, user_id=None, group_id=None):
         "Authorization": f"Bearer {token}"
     }
     
-    # 長度限制處理
-    message_text = message[:5000] if len(message) > 5000 else message
+    # 訊息分段處理 (LINE 限制 5000 字元,預留緩衝設 4800)
+    max_length = 4800
+    message_chunks = [message[i:i+max_length] for i in range(0, len(message), max_length)]
     
-    # 判斷發送模式（優先順序：Group ID > User ID > Broadcast）
+    # 判斷發送模式
     if group_id and group_id.strip():
-        # 模式 1: 群組推送 (Push to Group)
+        target_id = group_id.strip()
         url = "https://api.line.me/v2/bot/message/push"
-        payload = {
-            "to": group_id.strip(), 
-            "messages": [{"type": "text", "text": message_text}]
-        }
         mode_name = f"群組推送 (Group ID: {group_id[:10]}...)"
     elif user_id and user_id.strip():
-        # 模式 2: 個人推送 (Push to User)
+        target_id = user_id.strip()
         url = "https://api.line.me/v2/bot/message/push"
-        payload = {
-            "to": user_id.strip(), 
-            "messages": [{"type": "text", "text": message_text}]
-        }
         mode_name = f"個人推送 (User ID: {user_id[:10]}...)"
     else:
-        # 模式 3: 廣播 (Broadcast)
+        target_id = None
         url = "https://api.line.me/v2/bot/message/broadcast"
-        payload = {
-            "messages": [{"type": "text", "text": message_text}]
-        }
         mode_name = "廣播 (Broadcast)"
     
-    try: 
-        r = requests.post(url, headers=headers, json=payload)
-        
-        if r.status_code == 200:
-            print(f"✅ LINE 發送成功 ({mode_name})")
-        elif r.status_code == 400:
-            error_data = r.json() if r.text else {}
-            error_msg = error_data.get('message', 'Unknown error')
-            print(f"❌ LINE 發送失敗 ({mode_name})")
-            print(f"   Status Code: 400 - Bad Request")
-            print(f"   錯誤訊息: {error_msg}")
-            if "Invalid user" in error_msg or "Invalid group" in error_msg:
-                print(f"💡 提示: ID 無效")
-                print(f"   - 群組 ID 請從 webhook 取得（執行 line_webhook_server.py）")
-                print(f"   - 用戶 ID 格式應為 Uxxxxx...")
-                print(f"   - 群組 ID 格式應為 Cxxxxx...")
-            else:
-                print(f"   Response: {r.text}")
-        elif r.status_code == 401:
-            print(f"❌ LINE 發送失敗 - 認證錯誤")
-            print(f"   請檢查 LINE_TOKEN 是否正確")
-        elif r.status_code == 403:
-            print(f"❌ LINE 發送失敗 - 權限不足")
-            print(f"   請確認 Bot 已加入目標群組，或檢查 Channel 權限設定")
+    # 逐段發送
+    for i, chunk in enumerate(message_chunks):
+        if target_id:
+            payload = {
+                "to": target_id, 
+                "messages": [{"type": "text", "text": chunk}]
+            }
         else:
-            print(f"❌ LINE 發送失敗 ({mode_name})")
-            print(f"   Status Code: {r.status_code}")
-            print(f"   Response: {r.text}")
+            payload = {
+                "messages": [{"type": "text", "text": chunk}]
+            }
+        
+        try: 
+            r = requests.post(url, headers=headers, json=payload)
             
-    except requests.exceptions.RequestException as e:
-        print(f"❌ LINE 連線錯誤: {e}")
-    except Exception as e:
-        print(f"❌ LINE 發送異常: {e}")
+            if r.status_code == 200:
+                if len(message_chunks) > 1:
+                    print(f"✅ LINE 發送成功 ({mode_name}) - 第{i+1}/{len(message_chunks)}段")
+                else:
+                    print(f"✅ LINE 發送成功 ({mode_name})")
+            elif r.status_code == 400:
+                error_data = r.json() if r.text else {}
+                error_msg = error_data.get('message', 'Unknown error')
+                print(f"❌ LINE 發送失敗 ({mode_name}) - 第{i+1}段")
+                print(f"   Status Code: 400 - Bad Request")
+                print(f"   錯誤訊息: {error_msg}")
+                if "Invalid user" in error_msg or "Invalid group" in error_msg:
+                    print(f"💡 提示: ID 無效")
+                    print(f"   - 群組 ID 請從 webhook 取得（執行 line_webhook_server.py）")
+                    print(f"   - 用戶 ID 格式應為 Uxxxxx...")
+                    print(f"   - 群組 ID 格式應為 Cxxxxx...")
+                elif "Length must be between" in error_msg:
+                    print(f"💡 提示: 訊息長度超過限制")
+                    print(f"   - 當前段落長度: {len(chunk)} 字元")
+                    print(f"   - LINE 限制: 5000 字元")
+                else:
+                    print(f"   Response: {r.text}")
+                return  # 某段失敗就停止後續發送
+            elif r.status_code == 401:
+                print(f"❌ LINE 發送失敗 - 認證錯誤")
+                print(f"   請檢查 LINE_TOKEN 是否正確")
+                return
+            elif r.status_code == 403:
+                print(f"❌ LINE 發送失敗 - 權限不足")
+                print(f"   請確認 Bot 已加入目標群組，或檢查 Channel 權限設定")
+                return
+            else:
+                print(f"❌ LINE 發送失敗 ({mode_name}) - 第{i+1}段")
+                print(f"   Status Code: {r.status_code}")
+                print(f"   Response: {r.text}")
+                return
+            
+            # 避免發太快被限流
+            if i < len(message_chunks) - 1:
+                time.sleep(1)
+                
+        except requests.exceptions.RequestException as e:
+            print(f"❌ LINE 連線錯誤 (第{i+1}段): {e}")
+            return
+        except Exception as e:
+            print(f"❌ LINE 發送異常 (第{i+1}段): {e}")
+            return
 
 # 為了相容 main.py，保留舊函式名稱並轉接
 def send_telegram(message, token, chat_id):
