@@ -28,6 +28,13 @@ Navigate to: **GitHub Repository → Settings → Secrets and variables → Acti
   - Get from: [Perplexity AI](https://www.perplexity.ai/)
   - **IMPORTANT**: This is required for news intelligence features
 
+### 5. Database (Phase 6+)
+- **`MONGODB_URI`**: ⭐ **NEW in Phase 6** - MongoDB connection string
+  - Get from: [MongoDB Atlas](https://cloud.mongodb.com/)
+  - Format: `mongodb+srv://username:password@cluster.mongodb.net/stock_agent`
+  - **IMPORTANT**: Required for stateful analysis and historical tracking
+  - Fallback: If not set, system will warn but continue with limited features
+
 ## Setting Up Secrets
 
 ### Via GitHub Web UI
@@ -96,7 +103,21 @@ If upgrading from older versions:
 2. ➕ Add only `PERPLEXITY_API_KEY`
 3. ✅ No other changes needed
 
+## Phase 6 Changes (MongoDB)
+
+### What's New
+- Added `MONGODB_URI` secret requirement for stateful analysis
+- Database migrated from SQLite to MongoDB
+- Enables historical tracking and status change detection
+
+### Migration from Phase 4/5
+If upgrading to Phase 6:
+1. ✅ Keep all existing secrets
+2. ➕ Add `MONGODB_URI` from MongoDB Atlas
+3. ⚠️ **Optional**: SQLite data (`stocks.db`) will not be auto-migrated
+4. ✅ System will work without MongoDB (with warning)
+
 ---
 
-**Last Updated**: 2025-11-23 (Phase 4 Release)  
+**Last Updated**: 2025-12-07 (Phase 6 Release - MongoDB)  
 **Maintainer**: Antigravity AI

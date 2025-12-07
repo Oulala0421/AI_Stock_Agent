@@ -27,6 +27,13 @@ def load_config():
     LINE_USER_ID = os.getenv("LINE_USER_ID")
     LINE_GROUP_ID = os.getenv("LINE_GROUP_ID")
     
+    # Database Configuration
+    MONGODB_URI = os.getenv("MONGODB_URI")
+    if not MONGODB_URI:
+        print("⚠️  警告: MONGODB_URI 環境變數未設定")
+        print("💡 提示: 將使用 SQLite 作為後備方案")
+        print("   若要使用 MongoDB，請在 .env 中設定 MONGODB_URI")
+    
     return {
         "TOTAL_CAPITAL": TOTAL_CAPITAL,
         "MAX_RISK_PCT": MAX_RISK_PCT,
@@ -37,6 +44,7 @@ def load_config():
         "LINE_TOKEN": LINE_TOKEN,
         "LINE_USER_ID": LINE_USER_ID,
         "LINE_GROUP_ID": LINE_GROUP_ID,
+        "MONGODB_URI": MONGODB_URI,
         "STRATEGY": config.get('strategy', {}),
         "MARKET": config.get('market', {}),
         "CAPITAL_ALLOCATION": config.get('capital_allocation', {}),
