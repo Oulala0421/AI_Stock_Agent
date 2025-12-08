@@ -65,6 +65,7 @@ jobs:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
         MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        SERPAPI_API_KEY: ${{ secrets.SERPAPI_API_KEY }}
       run: |
         echo "🔍 環境變數檢查..."
         [ -z "$LINE_TOKEN" ] && echo "❌ LINE_TOKEN is EMPTY" || echo "✅ LINE_TOKEN loaded (${#LINE_TOKEN} chars)"
@@ -74,6 +75,7 @@ jobs:
         [ -z "$GEMINI_API_KEY" ] && echo "⚠️ GEMINI_API_KEY is EMPTY" || echo "✅ GEMINI_API_KEY loaded"
         [ -z "$PERPLEXITY_API_KEY" ] && echo "⚠️ PERPLEXITY_API_KEY is EMPTY" || echo "✅ PERPLEXITY_API_KEY loaded"
         [ -z "$MONGODB_URI" ] && echo "⚠️ MONGODB_URI is EMPTY" || echo "✅ MONGODB_URI loaded"
+        [ -z "$SERPAPI_API_KEY" ] && echo "⚠️ SERPAPI_API_KEY is EMPTY" || echo "✅ SERPAPI_API_KEY loaded"
 
     - name: Run Analysis
       env:
@@ -85,5 +87,6 @@ jobs:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
         MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        SERPAPI_API_KEY: ${{ secrets.SERPAPI_API_KEY }}
       run: |
         python main.py --mode ${{ env.MODE }}

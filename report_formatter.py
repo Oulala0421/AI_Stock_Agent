@@ -45,7 +45,41 @@ def format_stock_report(card: StockHealthCard, news_summary: Optional[str] = Non
     
     summary_line = f"📊 ROE: {roe_str} | PEG: {peg_str} | Debt/Eq: {de_str}"
     
-    # 4. News Section (NEW)
+    # 4. Prediction Section (Regime-Based Bootstrap Engine)
+    prediction_section = ""
+    if hasattr(card, 'predicted_return_1w') and card.predicted_return_1w is not None:
+        pred_val = card.predicted_return_1w
+        confidence = card.confidence_score if hasattr(card, 'confidence_score') and card.confidence_score else 0.5
+        
+        # Determine trend emoji and label
+        if pred_val > 2.0:
+            trend_emoji = "🚀"
+            trend_label = "強勢看漲"
+        elif pred_val > 0.5:
+            trend_emoji = "📈"
+            trend_label = "看漲"
+        elif pred_val > -0.5:
+            trend_emoji = "➡️"
+            trend_label = "持平"
+        elif pred_val > -2.0:
+            trend_emoji = "📉"
+            trend_label = "看跌"
+        else:
+            trend_emoji = "⚠️"
+            trend_label = "強勢看跌"
+        
+        # Confidence level
+        if confidence > 0.7:
+            conf_label = "高"
+        elif confidence > 0.5:
+            conf_label = "中"
+        else:
+            conf_label = "低"
+        
+        pred_sign = "+" if pred_val >= 0 else ""
+        prediction_section = f"\n🔮 AI預測: {trend_label} ({pred_sign}{pred_val:.2f}%) | 信心: {conf_label} ({confidence:.0%})"
+    
+    # 5. News Section
     news_section = ""
     if news_summary:
         news_section = f"\n\n📰 MARKET INTELLIGENCE:\n{news_summary}"
@@ -60,7 +94,7 @@ def format_stock_report(card: StockHealthCard, news_summary: Optional[str] = Non
     report = f"""
 {header}
 {tags_str}
-{summary_line}{news_section}{red_flags_section}
+{summary_line}{prediction_section}{news_section}{red_flags_section}
 """.strip()
 
     return report
