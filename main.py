@@ -79,7 +79,13 @@ def run_analysis(mode="post_market", dry_run=False):
         else:
             print(f"✅ 載入完成: 持股 {len(MY_HOLDINGS)} 檔 | 觀察 {len(MY_WATCHLIST)} 檔")
             strategy = GARPStrategy()
-            db = DatabaseManager()  # Initialize database for tracking
+            
+            # Initialize Database (Singleton)
+            db = DatabaseManager()
+            if db.enabled:
+                print("✅ [Main] MongoDB functionality enabled.")
+            else:
+                print("⚠️  [Main] Running without database storage.")
             
             # Analyze Holdings
             if MY_HOLDINGS:

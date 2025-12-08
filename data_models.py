@@ -55,6 +55,14 @@ class StockHealthCard:
     
     # Red Flags: A consolidated list of all severe warning tags
     red_flags: List[str] = field(default_factory=list)
+    
+    # === Price Prediction Fields (Sprint 1 Extension) ===
+    # AI-driven price forecasting and Monte Carlo simulation results
+    predicted_return_1w: Optional[float] = None  # 1-week predicted return (%)
+    predicted_return_1m: Optional[float] = None  # 1-month predicted return (%)
+    confidence_score: Optional[float] = None     # AI confidence score (0.0 - 1.0)
+    monte_carlo_min: Optional[float] = None      # Pessimistic scenario price
+    monte_carlo_max: Optional[float] = None      # Optimistic scenario price
 
     def __post_init__(self):
         """
@@ -62,3 +70,4 @@ class StockHealthCard:
         """
         if self.overall_status not in [status.value for status in OverallStatus]:
             raise ValueError(f"Invalid overall_status: {self.overall_status}")
+

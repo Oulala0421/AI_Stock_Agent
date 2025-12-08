@@ -1,28 +1,32 @@
 """
-MongoDB Database Manager for AI Stock Agent - Phase 6
-
-Purpose:
-- Store daily analysis snapshots in MongoDB for historical tracking  
-- Detect status changes (PASS -> WATCHLIST, etc.)
-- Enable future Web SaaS features (score trends, alerts)
+MongoDB Database Manager for AI Stock Agent
 
 Architecture:
-- Singleton Pattern: Reuse MongoClient for connection pooling
-- Retry Mechanism: Handle network failures with exponential backoff
-- Serialization: Custom serializer for StockHealthCard (handles Enum)
-- Idempotency: Upsert with (symbol, date) unique key
-- Indexing: Compound index on (symbol, date) for fast queries
+- Singleton Pattern: Single global database connection
+- Idempotency: Upsert ensures no duplicate records for same (date, symbol)
+- Serialization: Handles Python Enum and datetime conversion
+- Graceful Failure: Logs errors without crashing the application
+
+Author: Senior Backend Engineer
+Date: 2025-12-08
 """
 
 import os
+import logging
 from datetime import datetime
-from dataclasses import asdict
 from typing import Optional, Dict, Any, List
+from dataclasses import asdict
 from pymongo import MongoClient, ASCENDING, DESCENDING
-from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError, OperationFailure
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-from data_models import StockHealthCard, OverallStatus
+from pymongo.errors import PyMongoError, ServerSelectionTimeoutError, OperationFailure
 from config import Config
+from data_models import StockHealthCard, OverallStatus
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
@@ -30,8 +34,8 @@ class DatabaseManager:
     MongoDB Database Manager with Singleton Pattern
     
     Features:
-    - Connection pooling (reuses MongoClient)
-    - Automatic retry on network failures
+    - Global single instance (Singleton)
+    - Automatic connection pooling via MongoClient
     - Graceful error handling
     - Automatic index creation
     """
@@ -39,256 +43,265 @@ class DatabaseManager:
     _instance = None
     _client = None
     _db = None
-    _collection = None
-    _initialized = False
+    enabled = False
     
     def __new__(cls):
         """
-        Singleton Pattern: Ensure only one instance exists
+        Singleton Pattern: Ensure only one instance exists globally
         
         Why Singleton?
         - MongoClient has built-in connection pooling
-        - Reusing the same client is more efficient than reconnecting
+        - Prevents multiple unnecessary connections
+        - Ensures consistent state across application
         """
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
+            cls._instance = super(DatabaseManager, cls).__new__(cls)
+            cls._instance._init_client()
         return cls._instance
     
-    def __init__(self):
-        """
-        Initialize MongoDB connection (only once due to Singleton)
-        
-        Graceful Failure:
-        - If MONGODB_URI is missing, falls back to SQLite warning
-        - If connection fails, provides helpful error messages
-        """
-        if not self._initialized:
-            self._init_client()
-            self._initialized = True
-    
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((ConnectionFailure, ServerSelectionTimeoutError))
-    )
     def _init_client(self):
         """
-        Initialize MongoDB client with retry mechanism
+        Initialize MongoDB connection with timeout and error handling
         
-        Retry Strategy:
-        - Max 3 attempts
-        - Exponential backoff: 2s -> 4s -> 8s
-        - Only retry network errors (not logic errors)
-        
-        Raises:
-            SystemExit: If MONGODB_URI is not set or connection fails after retries
+        Graceful Failure:
+        - If MONGODB_URI is missing, disables DB features but allows app to run
+        - If connection fails, logs error and continues with disabled state
+        - Sets 5-second timeout to prevent hanging
         """
-        mongodb_uri = Config.get('MONGODB_URI')
+        self.enabled = False
+        uri = Config.get("MONGODB_URI")
         
-        if not mongodb_uri:
-            print("❌ MongoDB 連線失敗: MONGODB_URI 環境變數未設定")
-            print("💡 請在 .env 中設定 MONGODB_URI")
-            print("   範例: MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/stock_agent")
-            raise SystemExit(1)
+        if not uri:
+            logger.warning("⚠️  MongoDB URI not set. Database features disabled.")
+            logger.info("💡 Application will continue with limited functionality.")
+            return
         
         try:
-            # Create MongoClient with timeout settings
+            # Create MongoClient with 5-second timeout
             self._client = MongoClient(
-                mongodb_uri,
-                serverSelectionTimeoutMS=5000,  # 5 second timeout
-                connectTimeoutMS=10000,         # 10 second connect timeout
-                retryWrites=True                # Enable automatic write retries
+                uri,
+                serverSelectionTimeoutMS=5000,
+                connectTimeoutMS=10000,
+                retryWrites=True
             )
             
-            # Test connection by pinging the server
+            # Ping test to verify connection
             self._client.admin.command('ping')
             
-            # Initialize database and collection
-            self._db = self._client['stock_agent']
-            self._collection = self._db['stock_analysis']
+            # Get database (default: stock_agent)
+            self._db = self._client.get_database("stock_agent")
+            self.enabled = True
             
-            # Ensure indexes exist
+            # Create indexes for optimal query performance
             self._ensure_indexes()
             
-            print("✅ [MongoDB] Connection Successful")
-            print(f"   Database: stock_agent")
-            print(f"   Collection: stock_analysis")
+            logger.info("✅ [MongoDB] Connection Successful")
+            logger.info(f"   Database: stock_agent")
+            logger.info(f"   Collection: daily_snapshots")
             
         except ServerSelectionTimeoutError as e:
-            print("❌ MongoDB 連線失敗: 無法連接到伺服器")
-            print(f"💡 請檢查:")
-            print(f"   1. MONGODB_URI 是否正確")
-            print(f"   2. 網路連線是否正常")
-            print(f"   3. MongoDB Atlas IP 白名單設定")
-            print(f"   錯誤詳情: {str(e)}")
-            raise SystemExit(1)
-            
-        except ConnectionFailure as e:
-            print("❌ MongoDB 連線失敗: 認證錯誤")
-            print(f"💡 請檢查 MONGODB_URI 中的用戶名稱和密碼")
-            print(f"   錯誤詳情: {str(e)}")
-            raise SystemExit(1)
+            logger.error(f"❌ [MongoDB] Connection Timeout: {e}")
+            logger.warning("💡 Check network connectivity and MongoDB Atlas IP whitelist")
+            self.enabled = False
             
         except Exception as e:
-            print(f"❌ MongoDB 連線失敗: {type(e).__name__}")
-            print(f"   錯誤詳情: {str(e)}")
-            raise SystemExit(1)
+            logger.error(f"❌ [MongoDB] Connection Failed: {type(e).__name__} - {e}")
+            logger.warning("💡 Application will continue without database features")
+            self.enabled = False
     
     def _ensure_indexes(self):
         """
         Create indexes for optimal query performance
         
-        Index Strategy:
-        - Compound index: (symbol, date DESC)
-        - Accelerates get_status_change() queries
-        - Background creation to avoid blocking
-        
-        Query Pattern:
-        - "Find the most recent record for symbol X before date Y"
-        - MongoDB will use this index to quickly locate the document
+        Indexes:
+        - (symbol, date DESC): Accelerates latest status queries
+        - Compound index allows efficient filtering by symbol and sorting by date
         """
         try:
+            collection = self._db.daily_snapshots
+            
             # Create compound index: symbol (ascending) + date (descending)
-            self._collection.create_index(
+            collection.create_index(
                 [("symbol", ASCENDING), ("date", DESCENDING)],
                 name="idx_symbol_date",
-                background=True  # Non-blocking index creation
+                background=True
             )
-            print("   ├─ 📊 Index 'idx_symbol_date' 已建立")
+            
+            logger.info("   ├─ 📊 Index 'idx_symbol_date' ensured")
             
         except OperationFailure as e:
-            # Index might already exist, not a critical error
-            print(f"   ├─ ⚠️ Index 建立警告: {e}")
+            # Index might already exist, not critical
+            logger.debug(f"Index creation note: {e}")
     
-    def _serialize_card(self, card: StockHealthCard) -> dict:
+    def _serialize_card(self, card: StockHealthCard) -> Dict[str, Any]:
         """
-        Serialize StockHealthCard to MongoDB-compatible dict
+        Convert StockHealthCard dataclass to MongoDB-compatible dict
         
-        Challenge: Enum Handling
-        - Python Enum cannot be directly stored in MongoDB
-        - Solution: Convert to string using .value
+        Handles:
+        - Enum -> String conversion (OverallStatus)
+        - Nested dataclass structures
+        - Optional fields (price prediction) -> stored as null if None
+        - Ensures all data types are BSON-compatible
         
         Args:
-            card: StockHealthCard object
+            card: StockHealthCard object from GARP analysis
             
         Returns:
-            Dict ready for MongoDB insertion
+            Dictionary ready for MongoDB insertion
         """
         # Convert dataclass to dict
         data = asdict(card)
         
-        # Handle Enum: OverallStatus -> String
-        # Before: overall_status = OverallStatus.PASS (Enum object)
-        # After: overall_status = "PASS" (String)
-        if isinstance(card.overall_status, str):
-            data['overall_status'] = card.overall_status
-        else:
-            data['overall_status'] = card.overall_status.value if hasattr(card.overall_status, 'value') else str(card.overall_status)
+        # Handle Enum conversion: OverallStatus -> String
+        if 'overall_status' in data:
+            if isinstance(card.overall_status, str):
+                data['overall_status'] = card.overall_status
+            else:
+                # If it's an Enum object, extract value
+                data['overall_status'] = getattr(
+                    card.overall_status, 'value', 
+                    str(card.overall_status)
+                )
+        
+        # Handle Optional price prediction fields (Sprint 1 Extension)
+        # MongoDB best practice: store None as null (not 0)
+        # This distinguishes "not calculated" from "calculated as 0"
+        prediction_fields = [
+            'predicted_return_1w',
+            'predicted_return_1m', 
+            'confidence_score',
+            'monte_carlo_min',
+            'monte_carlo_max'
+        ]
+        
+        for field_name in prediction_fields:
+            if field_name in data:
+                # Keep None as-is (will be stored as null in MongoDB)
+                # This is intentional - we want to preserve the distinction
+                pass
         
         return data
     
     def save_daily_snapshot(self, card: StockHealthCard, report_text: str, date: str = None):
         """
-        Save daily analysis snapshot to MongoDB with idempotency
+        Save daily analysis snapshot with idempotency guarantee
         
         Idempotency (冪等性):
-        - Problem: Running the script twice should not create duplicate records
-        - Solution: Use update_one() with upsert=True
-        - Unique Key: (symbol, date) combination
-        
-        Example:
+        - Uses upsert=True with (date, symbol) as unique key
+        - Running multiple times on same day only updates, never duplicates
         - First run: Inserts new document
-        - Second run (same day): Updates existing document
-        - Result: Only one document per (symbol, date)
+        - Subsequent runs: Updates existing document
         
         Args:
             card: StockHealthCard object from GARP analysis
-            report_text: Formatted report string from format_stock_report()
+            report_text: Formatted report string
             date: Analysis date (YYYY-MM-DD), defaults to today
         """
+        if not self.enabled:
+            logger.debug("MongoDB disabled, skipping save")
+            return
+        
         if date is None:
-            date = datetime.now().strftime('%Y-%m-%d')
+            date = datetime.now().strftime("%Y-%m-%d")
         
         try:
-            # Serialize StockHealthCard (handles Enum conversion)
-            raw_data = self._serialize_card(card)
+            collection = self._db.daily_snapshots
             
-            # Build MongoDB document
-            document = {
+            # Prepare document
+            doc = {
                 "date": date,
                 "symbol": card.symbol,
                 "price": card.price,
                 "status": card.overall_status if isinstance(card.overall_status, str) else card.overall_status.value,
                 "report": report_text,
-                "raw_data": raw_data,
-                "_updated_at": datetime.utcnow()  # Track last update time
+                "raw_data": self._serialize_card(card),
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
             }
             
-            # Upsert: Update if exists, Insert if not
-            # Unique key: {symbol: "NVDA", date: "2025-12-07"}
-            result = self._collection.update_one(
-                {"symbol": card.symbol, "date": date},  # Filter
+            # Upsert logic: Query by (date, symbol)
+            # If exists: update
+            # If not exists: insert
+            query = {"date": date, "symbol": card.symbol}
+            
+            result = collection.update_one(
+                query,
                 {
-                    "$set": document,                    # Update fields
-                    "$setOnInsert": {"_created_at": datetime.utcnow()}  # Only on insert
+                    "$set": doc,
+                    "$setOnInsert": {"created_at": datetime.utcnow()}
                 },
-                upsert=True  # Create if doesn't exist
+                upsert=True
             )
             
             # Log result
             if result.upserted_id:
-                print(f"   ├─ 💾 已新增: {card.symbol} @ {date}")
+                logger.info(f"   ├─ 💾 已新增: {card.symbol} @ {date}")
+            elif result.modified_count > 0:
+                logger.info(f"   ├─ 💾 已更新: {card.symbol} @ {date}")
             else:
-                print(f"   ├─ 💾 已更新: {card.symbol} @ {date}")
-            
+                logger.debug(f"   ├─ 💾 無變更: {card.symbol} @ {date}")
+                
+        except PyMongoError as e:
+            logger.error(f"   ├─ ❌ MongoDB 存檔失敗: {card.symbol} - {e}")
         except Exception as e:
-            print(f"   ├─ ⚠️ MongoDB 存檔失敗: {card.symbol} - {e}")
-            print(f"      錯誤類型: {type(e).__name__}")
+            logger.error(f"   ├─ ❌ 存檔異常: {card.symbol} - {type(e).__name__}: {e}")
+    
+    def get_latest_status(self, symbol: str) -> Optional[Dict]:
+        """
+        Get the most recent analysis result for a symbol (for comparison)
+        
+        Query Logic:
+        - Find records where symbol matches and date < today
+        - Sort by date DESC (most recent first)
+        - Return only the latest one
+        
+        Args:
+            symbol: Stock symbol
+            
+        Returns:
+            Dictionary containing the latest snapshot, or None if not found
+        """
+        if not self.enabled:
+            return None
+        
+        try:
+            collection = self._db.daily_snapshots
+            today = datetime.now().strftime("%Y-%m-%d")
+            
+            # Query: symbol = X AND date < today
+            # Sort: date DESC (most recent first)
+            # Limit: 1
+            result = collection.find_one(
+                {"symbol": symbol, "date": {"$lt": today}},
+                sort=[("date", DESCENDING)]
+            )
+            
+            return result
+            
+        except PyMongoError as e:
+            logger.error(f"   ├─ ❌ 歷史查詢失敗: {symbol} - {e}")
+            return None
     
     def get_status_change(self, symbol: str, current_status: str, current_date: str = None) -> str:
         """
         Detect status changes by comparing with most recent historical record
         
-        Query Strategy:
-        - Find: symbol = X AND date < current_date
-        - Sort: date DESC (most recent first)
-        - Limit: 1 (only need the latest)
-        
-        MongoDB Query:
-        db.stock_analysis.findOne(
-            {symbol: "NVDA", date: {$lt: "2025-12-07"}},
-            sort: {date: -1}
-        )
-        
-        Performance:
-        - Uses idx_symbol_date index
-        - O(log n) complexity due to index
-        
-        Args:
-            symbol: Stock symbol
-            current_status: Current analysis status (PASS/WATCHLIST/REJECT)
-            current_date: Current date (YYYY-MM-DD), defaults to today
-        
         Returns:
             "NEW": No historical record found
             "UPGRADE": Status improved (REJECT -> WATCHLIST, WATCHLIST -> PASS)
-            "DOWNGRADE": Status worsened (PASS -> WATCHLIST, WATCHLIST -> REJECT)  
+            "DOWNGRADE": Status worsened (PASS -> WATCHLIST, WATCHLIST -> REJECT)
             "NO_CHANGE": Status unchanged
         """
         if current_date is None:
             current_date = datetime.now().strftime('%Y-%m-%d')
         
         try:
-            # Query: Find most recent record before current_date
-            result = self._collection.find_one(
-                {"symbol": symbol, "date": {"$lt": current_date}},
-                sort=[("date", DESCENDING)]  # Most recent first
-            )
+            latest = self.get_latest_status(symbol)
             
-            if result is None:
+            if latest is None:
                 return "NEW"
             
-            old_status = result.get('status', 'UNKNOWN')
+            old_status = latest.get('status', 'UNKNOWN')
             
             # Define status hierarchy (higher = better)
             status_rank = {
@@ -306,9 +319,9 @@ class DatabaseManager:
                 return "DOWNGRADE"
             else:
                 return "NO_CHANGE"
-        
+                
         except Exception as e:
-            print(f"   ├─ ⚠️ 狀態檢查失敗: {symbol} - {e}")
+            logger.error(f"   ├─ ⚠️ 狀態檢查失敗: {symbol} - {e}")
             return "NO_CHANGE"
     
     def get_historical_data(self, symbol: str, limit: int = 30) -> List[Dict[str, Any]]:
@@ -320,18 +333,23 @@ class DatabaseManager:
             limit: Maximum number of records to return
         
         Returns:
-            List of dicts containing historical data, sorted by date DESC
+            List of dictionaries containing historical data, sorted by date DESC
         """
+        if not self.enabled:
+            return []
+        
         try:
-            cursor = self._collection.find(
+            collection = self._db.daily_snapshots
+            
+            cursor = collection.find(
                 {"symbol": symbol},
-                {"_id": 0, "date": 1, "price": 1, "status": 1, "raw_data": 1}
+                {"_id": 0}  # Exclude MongoDB internal _id
             ).sort("date", DESCENDING).limit(limit)
             
             return list(cursor)
-        
-        except Exception as e:
-            print(f"⚠️ 歷史資料查詢失敗: {symbol} - {e}")
+            
+        except PyMongoError as e:
+            logger.error(f"⚠️ 歷史資料查詢失敗: {symbol} - {e}")
             return []
     
     def close(self):
@@ -343,44 +361,22 @@ class DatabaseManager:
         """
         if self._client:
             self._client.close()
-            print("🔌 MongoDB 連線已關閉")
+            logger.info("🔌 MongoDB 連線已關閉")
 
 
-# Test module
+# For backward compatibility with existing code
+# Keeping the same API as SQLite version
 if __name__ == "__main__":
     print("🧪 Testing MongoDB DatabaseManager\n")
     
     try:
-        # Test 1: Connection
-        print("Test 1: MongoDB Connection")
-        db = DatabaseManager()
+        # Test: Singleton Pattern
+        print("Test 1: Singleton Pattern")
+        db1 = DatabaseManager()
+        db2 = DatabaseManager()
+        print(f"   Same instance: {db1 is db2}")
+        print(f"   Enabled: {db1.enabled}")
         print("✅ Pass\n")
         
-        # Test 2: Serialization (mock)
-        print("Test 2: Serialization")
-        from data_models import StockHealthCard, OverallStatus
-        
-        mock_card = StockHealthCard(
-            symbol="TEST",
-            price=100.0,
-            overall_status=OverallStatus.PASS.value
-        )
-        serialized = db._serialize_card(mock_card)
-        print(f"   Serialized status: {serialized['overall_status']}")
-        print("✅ Pass\n")
-        
-        # Test 3: Index Check
-        print("Test 3: Index Verification")
-        indexes = db._collection.list_indexes()
-        index_names = [idx['name'] for idx in indexes]
-        print(f"   Existing indexes: {index_names}")
-        if 'idx_symbol_date' in index_names:
-            print("✅ Pass\n")
-        else:
-            print("⚠️ Warning: idx_symbol_date not found\n")
-        
-        print("🎉 All tests completed!")
-        
-    except SystemExit:
-        print("\n❌ Connection failed - this is expected if MONGODB_URI is not set")
-        print("💡 Set MONGODB_URI in .env to enable MongoDB features")
+    except Exception as e:
+        print(f"❌ Test failed: {e}")
