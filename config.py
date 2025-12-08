@@ -21,6 +21,7 @@ def load_config():
     # API Keys (Load from Env)
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
     PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
+    SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
     TG_TOKEN = os.getenv("TG_TOKEN")
     TG_CHAT_ID = os.getenv("TG_CHAT_ID")
     LINE_TOKEN = os.getenv("LINE_TOKEN")
@@ -39,6 +40,7 @@ def load_config():
         "MAX_RISK_PCT": MAX_RISK_PCT,
         "GEMINI_API_KEY": GEMINI_API_KEY,
         "PERPLEXITY_API_KEY": PERPLEXITY_API_KEY,
+        "SERPAPI_API_KEY": SERPAPI_API_KEY,
         "TG_TOKEN": TG_TOKEN,
         "TG_CHAT_ID": TG_CHAT_ID,
         "LINE_TOKEN": LINE_TOKEN,
