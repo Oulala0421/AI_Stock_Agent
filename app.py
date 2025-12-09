@@ -30,7 +30,8 @@ st.set_page_config(
 )
 
 # Custom CSS for Premium UI
-st.markdown("""
+# Custom CSS for Premium UI
+CUSTOM_CSS = r"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     
@@ -41,7 +42,7 @@ st.markdown("""
     
     /* Remove padding */
     .block-container {
-        padding-top: 25px !important;
+        padding-top: 2rem !important;
         padding-bottom: 3rem !important;
     }
     
@@ -107,7 +108,8 @@ st.markdown("""
     header {visibility: hidden;}
     
 </style>
-""", unsafe_allow_html=True)
+"""
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 
 @st.cache_resource
