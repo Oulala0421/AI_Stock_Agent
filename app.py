@@ -130,8 +130,9 @@ def init_mongo_connection():
         return None
 
 
+@st.cache_data(ttl=60)
 def get_market_data():
-    """Fetch SPY/VIX"""
+    """Fetch SPY/VIX (Cached)"""
     try:
         spy = yf.Ticker("SPY").history(period="2d")
         vix = yf.Ticker("^VIX").history(period="1d")
@@ -147,34 +148,34 @@ def get_market_data():
         return {"spy": 0, "spy_chg": 0, "vix": 0}
 
 
+@st.cache_data(ttl=300)
 def get_data_with_history(limit=50):
     """
-    Fetch stocks with 7-day price history array
+    Fetch stocks with 7-day price history array (Cached)
     """
     client = init_mongo_connection()
     if not client: return []
     
     db = client['stock_agent']
     pipeline = [
-        {"$sort": {"date": -1, "created_at": -1}},
+        {"$sort": {"date": -1, "created_at": -1}}, # Ensure latest date first
         {
             "$group": {
                 "_id": "$symbol",
                 "latest": {"$first": "$$ROOT"},
-                # Collect price history (descending order due to sort)
                 "prices": {"$push": "$price"}
             }
         },
         {
             "$project": {
                 "latest": 1,
-                # Take last 7 prices (which are actually most recent due to sort)
                 "sparkline": {"$slice": ["$prices", 7]}
             }
         },
         {"$replaceRoot": {"newRoot": {"$mergeObjects": ["$latest", {"sparkline": "$sparkline"}]}}},
-        {"$sort": {"overall_status": 1}}, # Sort group somewhat
+        {"$sort": {"overall_status": 1}},
     ]
+    # Convert cursor to list for caching
     return list(db['daily_snapshots'].aggregate(pipeline))
 
 
