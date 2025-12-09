@@ -344,8 +344,11 @@ def main():
                 st.line_chart(pd.DataFrame(sparkline[::-1], columns=['Price']), height=50, use_container_width=True)
 
             # [Feature] Tabs for detailed view
-            tab_ai, tab_fund, tab_tech = st.expander(f"💡 AI 分析與詳細數據", expanded=True).tabs(["🧠 AI 分析", "📊 基本面數據", "📉 技術指標"])
+            tab_ai, tab_fund, tab_tech = st.expander(f"💡 AI 分析與詳細數據", expanded=False).tabs(["🧠 AI 分析", "📊 基本面數據", "📉 技術指標"])
             
+            # Pre-fetch news summary
+            news_summary = stock.get('news_summary_str')
+
             with tab_ai:
                 report = stock.get('report', '尚無分析報告')
                 st.markdown(report)
@@ -406,10 +409,9 @@ def main():
                 
                 if tags:
                     st.markdown("**🏷️ 標籤:** " + " ".join([f"`{t}`" for t in tags]))
-                    if news_summary: # Check if news_summary exists before displaying
-                        st.info(news_summary)
-                else:
-                    st.write("暫無新聞分析")
+                    
+                if news_summary:
+                    st.info(f"📰 **最新新聞摘要**: {news_summary}")
                 
                 # Tech Tags
                 # Try to get tags from raw dictionary if available, relying on flat structure??
