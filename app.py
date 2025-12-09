@@ -37,7 +37,6 @@ CUSTOM_CSS = r"""
     
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif;
-        color: #1f2937;
     }
     
     /* Remove padding */
@@ -46,7 +45,7 @@ CUSTOM_CSS = r"""
         padding-bottom: 3rem !important;
     }
     
-    /* Status Badges */
+    /* Status Badges - Adaptive Text Color */
     .badge {
         display: inline-block;
         padding: 4px 8px;
@@ -56,28 +55,28 @@ CUSTOM_CSS = r"""
         margin-right: 5px;
     }
     
-    .badge-pass { background-color: #d1fae5; color: #065f46; }
-    .badge-watch { background-color: #fef3c7; color: #92400e; }
-    .badge-reject { background-color: #fee2e2; color: #991b1b; }
+    .badge-pass { background-color: rgba(6, 95, 70, 0.2); color: #10b981; border: 1px solid #10b981; }
+    .badge-watch { background-color: rgba(146, 64, 14, 0.2); color: #f59e0b; border: 1px solid #f59e0b; }
+    .badge-reject { background-color: rgba(153, 27, 27, 0.2); color: #ef4444; border: 1px solid #ef4444; }
     
-    .badge-tag { background-color: #f3f4f6; color: #374151; border: 1px solid #e5e7eb; }
+    .badge-tag { background-color: var(--secondary-background-color); color: var(--text-color); border: 1px solid var(--primary-color); opacity: 0.8; }
     
-    /* Metrics Header */
+    /* Metrics Header - Adaptive */
     .kpi-card {
-        background: white;
-        border: 1px solid #e5e7eb;
+        background-color: var(--secondary-background-color);
+        border: 1px solid rgba(128, 128, 128, 0.2);
         border-radius: 12px;
         padding: 1.5rem;
         box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     }
     
-    .kpi-label { font-size: 0.875rem; color: #6b7280; font-weight: 500; }
-    .kpi-value { font-size: 2rem; font-weight: 700; color: #111827; margin: 0.5rem 0; }
+    .kpi-label { font-size: 0.875rem; color: var(--text-color); opacity: 0.8; font-weight: 500; }
+    .kpi-value { font-size: 2rem; font-weight: 700; color: var(--text-color); margin: 0.5rem 0; }
     
-    /* Stock Card Container */
+    /* Stock Card Container - Adaptive */
     .stock-card-container {
-        background: white;
-        border: 1px solid #e5e7eb;
+        background-color: var(--secondary-background-color);
+        border: 1px solid rgba(128, 128, 128, 0.2);
         border-radius: 16px;
         padding: 0;
         overflow: hidden;
@@ -86,7 +85,7 @@ CUSTOM_CSS = r"""
     }
     .stock-card-container:hover {
         transform: translateY(-2px);
-        box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     }
     
     .card-header {
@@ -94,13 +93,13 @@ CUSTOM_CSS = r"""
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
-        background: #f9fafb;
-        border-bottom: 1px solid #f3f4f6;
+        background-color: rgba(128, 128, 128, 0.05);
+        border-bottom: 1px solid rgba(128, 128, 128, 0.1);
     }
     
     .card-body { padding: 1.25rem; }
     
-    .price-large { font-size: 1.5rem; font-weight: 700; color: #111827; }
+    .price-large { font-size: 1.5rem; font-weight: 700; color: var(--text-color); }
     
     /* Hide Streamlit elements */
     #MainMenu {visibility: hidden;}
