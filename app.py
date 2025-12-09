@@ -280,8 +280,16 @@ def main():
             symbol = stock.get('symbol')
             price = stock.get('price', 0)
             status = stock.get('overall_status', 'UNKNOWN')
+            
+            # [Fix] Handle nested raw_data from MongoDB
+            raw_data = stock.get('raw_data', {})
+            
             pred_1w = stock.get('predicted_return_1w')
+            if pred_1w is None: pred_1w = raw_data.get('predicted_return_1w')
+            
             conf = stock.get('confidence_score')
+            if conf is None: conf = raw_data.get('confidence_score')
+            
             sparkline = stock.get('sparkline', [])
             
             # Styles
