@@ -55,6 +55,15 @@ class StockHealthCard:
     
     # Red Flags: A consolidated list of all severe warning tags
     red_flags: List[str] = field(default_factory=list)
+
+    # Advanced Metrics: Piotroski F-Score (0-9), Altman Z-Score, FCF Yield, News Sentiment
+    advanced_metrics: Dict = field(default_factory=lambda: {
+        "piotroski_score": None,
+        "altman_z_score": None,
+        "fcf_yield": None,
+        "news_analysis": None, # {sentiment, confidence, summary_reason}
+        "tags": []
+    })
     
     # === Price Prediction Fields (Sprint 1 Extension) ===
     # AI-driven price forecasting and Monte Carlo simulation results

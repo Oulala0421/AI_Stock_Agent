@@ -3,6 +3,10 @@ from data_models import StockHealthCard, OverallStatus
 from market_data import fetch_and_analyze
 from config import Config
 from logger import logger
+from advanced_metrics import AdvancedFinancials
+from prediction_engine import get_predicted_return
+from google_news_searcher import GoogleNewsSearcher
+from news_agent import NewsAgent
 
 class GARPStrategy:
     def __init__(self):
@@ -20,6 +24,10 @@ class GARPStrategy:
             'max_peg': valuation_config.get('max_peg', 1.5),
             'max_pe': valuation_config.get('max_pe', 40)
         }
+        
+        # Initialize News Agents
+        self.news_searcher = GoogleNewsSearcher()
+        self.news_agent = NewsAgent()
 
     def analyze(self, symbol: str) -> StockHealthCard:
         """
@@ -51,16 +59,174 @@ class GARPStrategy:
         # 3. Quality Check
         self._check_quality(card, info)
 
-        # 4. Valuation Check
+        # 4. News Sentiment Analysis (Moved before Valuation)
+        try:
+            if self.news_agent.enabled:
+                news_list = self.news_searcher.search_news(symbol, days=3) # Past 3 days
+                analysis = self.news_agent.analyze_news(symbol, news_list)
+                
+                if analysis:
+                    card.advanced_metrics['news_analysis'] = analysis
+                    sentiment = analysis.get('sentiment', 'Neutral')
+                    confidence = analysis.get('confidence', 0.5)
+                    
+                    if sentiment == 'Positive':
+                        card.advanced_metrics['tags'].append(f"📰 News: Positive ({confidence:.0%})")
+                    elif sentiment == 'Negative':
+                        card.advanced_metrics['tags'].append(f"📰 News: Negative ({confidence:.0%})")
+                    
+        except Exception as e:
+            logger.error(f"News Analysis failed for {symbol}: {e}")
+
+        # 5. Valuation Check (Now uses Sentiment)
         self._check_valuation(card, info, price)
 
         # 5. Technical Setup
         self._check_technical(card, market_data)
 
+        # 5.5 Advanced Metrics (Academic Standard)
+        try:
+            adv = AdvancedFinancials(ticker)
+            
+            # Piotroski F-Score
+            f_score_res = adv.calculate_piotroski_f_score()
+            card.advanced_metrics['piotroski_score'] = f_score_res.get('score')
+            if f_score_res.get('score') is not None:
+                if f_score_res['score'] >= 7:
+                    card.advanced_metrics['tags'].append(f"🏆 High F-Score ({f_score_res['score']})")
+                elif f_score_res['score'] <= 3:
+                     card.advanced_metrics['tags'].append(f"⚠️ Low F-Score ({f_score_res['score']})")
+                else:
+                     card.advanced_metrics['tags'].append(f"Average F-Score ({f_score_res['score']})")
+
+            # Altman Z-Score
+            z_score_res = adv.calculate_altman_z_score(price)
+            card.advanced_metrics['altman_z_score'] = z_score_res.get('score')
+            if z_score_res.get('score') is not None:
+                status = z_score_res.get('status', 'Unknown')
+                if status == 'Safe':
+                     card.advanced_metrics['tags'].append(f"🛡️ Z-Score Safe ({z_score_res['score']:.2f})")
+                elif status == 'Distress':
+                     card.advanced_metrics['tags'].append(f"💀 Z-Score Distress ({z_score_res['score']:.2f})")
+                     card.red_flags.append(f"Bankruptcy Risk (Z-Score {z_score_res['score']:.2f})")
+                else:
+                     card.advanced_metrics['tags'].append(f"⚖️ Z-Score Grey ({z_score_res['score']:.2f})")
+
+            # FCF Yield
+            fcf_res = adv.calculate_fcf_yield(price)
+            card.advanced_metrics['fcf_yield'] = fcf_res.get('yield')
+            if fcf_res.get('yield') is not None:
+                yld = fcf_res['yield']
+                card.advanced_metrics['tags'].append(f"💰 FCF Yield: {yld:.1%}")
+
+        except Exception as e:
+            logger.error(f"Failed to calc advanced metrics for {symbol}: {e}")
+            card.advanced_metrics['tags'].append("⚠️ Advanced Metrics Failed")
+
+        # 5.6 Monte Carlo Simulation (Trend & Prediction)
+        try:
+            prediction = get_predicted_return(symbol)
+            if prediction:
+                card.predicted_return_1w = prediction.get('predicted_return_1w')
+                card.confidence_score = prediction.get('confidence_score')
+                
+                stats = prediction.get('simulation_stats', {})
+                card.monte_carlo_min = stats.get('var_95') 
+                
+                if card.predicted_return_1w > 0:
+                     card.advanced_metrics['tags'].append(f"📈 Predicted +{card.predicted_return_1w:.1f}% (Conf: {card.confidence_score:.0%})")
+                else:
+                     card.advanced_metrics['tags'].append(f"📉 Predicted {card.predicted_return_1w:.1f}% (Conf: {card.confidence_score:.0%})")
+
+        except Exception as e:
+             logger.error(f"Prediction failed for {symbol}: {e}")
+
+
+
         # 6. Determine Overall Status
-        self._determine_overall_status(card)
+        self._determine_overall_status(card, market_data) # Pass market_data for Trend check
 
         return card
+
+    # Modified to accept market_data
+    def _determine_overall_status(self, card: StockHealthCard, market_data: dict):
+        """
+        Final Decision Logic:
+        - Passthrough checks
+        - Advanced Metrics Overrides
+        - SMA200 Trend Filter
+        """
+        
+        passed_solvency = card.solvency_check['is_passing']
+        passed_quality = card.quality_check['is_passing']
+        passed_valuation = card.valuation_check['is_passing']
+        passed_technical = card.technical_setup['is_passing']
+        
+        # Base Logic
+        if passed_solvency and passed_quality and passed_valuation:
+             if not passed_technical:
+                 card.overall_status = OverallStatus.WATCHLIST.value
+                 card.overall_reason = "Fundamentals Great, but Technicals Overheated"
+             else:
+                 card.overall_status = OverallStatus.PASS.value
+                 card.overall_reason = "All Systems Go (GARP Approved)"
+        
+        elif passed_solvency and passed_quality and not passed_valuation:
+            card.overall_status = OverallStatus.WATCHLIST.value
+            card.overall_reason = "Great Company, Expensive Price"
+            
+        else:
+            card.overall_status = OverallStatus.REJECT.value
+            card.overall_reason = "Fundamental Red Flags"
+
+        # === Advanced Metrics Overrides (Safety First) ===
+        z_score = card.advanced_metrics.get('altman_z_score')
+        f_score = card.advanced_metrics.get('piotroski_score')
+
+        # 1. Bankruptcy Veto (Z-Score < 1.8)
+        if z_score is not None and z_score < 1.8:
+            card.overall_status = OverallStatus.REJECT.value
+            card.overall_reason = f"⛔ Rejected: High Bankruptcy Risk (Z-Score {z_score:.2f})"
+
+        # 2. Weak Financials Veto (F-Score <= 3)
+        if f_score is not None and f_score <= 3:
+            if card.overall_status == OverallStatus.PASS.value:
+                card.overall_status = OverallStatus.WATCHLIST.value
+                card.overall_reason = f"Downgraded: Financials Deteriorating (F-Score {f_score})"
+
+        # 3. Quality Rescue (Strong F-Score + Safe Z-Score)
+        if card.overall_status == OverallStatus.REJECT.value:
+            if f_score is not None and f_score >= 7 and z_score is not None and z_score > 2.99:
+                 card.overall_status = OverallStatus.WATCHLIST.value
+                 card.overall_reason = f"Saved by Quality: High F-Score ({f_score}) & Safe Z-Score"
+
+        # === SMA200 Trend Filter (Don't Fight the Fed/Market) ===
+        # Downgrade PASS to WATCHLIST if below SMA200 (Long Term Downtrend)
+        # But if it's already REJECT, keep REJECT.
+        is_above_ma200 = market_data.get('trend', {}).get('is_above_ma200', True)
+        
+        if not is_above_ma200:
+            card.technical_setup['tags'].append("📉 Below SMA200 (Downtrend)")
+            
+            if card.overall_status == OverallStatus.PASS.value:
+                card.overall_status = OverallStatus.WATCHLIST.value
+                card.overall_reason = "Downgraded: Long-Term Downtrend (Below SMA200)"
+            elif card.overall_status == OverallStatus.WATCHLIST.value:
+                if "Downtrend" not in card.overall_reason:
+                     card.overall_reason += " & Below SMA200"
+
+        # === News Sentiment Veto (Behavioral Safety) ===
+        # Avoid "catching falling knives" if news is overwhelmingly negative
+        news_analysis = card.advanced_metrics.get('news_analysis')
+        if news_analysis:
+            sentiment = news_analysis.get('sentiment')
+            confidence = news_analysis.get('confidence', 0.0)
+            
+            if sentiment == 'Negative' and confidence > 0.7:
+                 if card.overall_status == OverallStatus.PASS.value:
+                     card.overall_status = OverallStatus.WATCHLIST.value
+                     card.overall_reason = f"Downgraded: Negative News Sentiment (Conf: {confidence:.0%})"
+
 
     def _create_empty_card(self, symbol: str) -> StockHealthCard:
         card = StockHealthCard(symbol=symbol, price=0.0, strategy_type=self.strategy_type)
@@ -142,34 +308,111 @@ class GARPStrategy:
         
         card.quality_check['is_passing'] = is_passing
 
+    def get_market_sentiment(self) -> float:
+        """
+        Get SPY sentiment score (-100 to 100) to gauge market temperature.
+        Cached for 1 hour to avoid excessive API calls.
+        """
+        # In a real implementation with DB, we would cache this. 
+        # For now, we fetch it live but could simple-cache in instance.
+        if hasattr(self, '_market_sentiment_cache'):
+             return self._market_sentiment_cache
+             
+        try:
+            logger.info("📊 Checking Market Sentiment (SPY)...")
+            spy_news = self.news_searcher.search_news("SPY", days=2)
+            if not spy_news:
+                return 0.0
+            
+            analysis = self.news_agent.analyze_news("SPY", spy_news)
+            if analysis:
+                score = analysis.get('sentiment_score', 0)
+                self._market_sentiment_cache = score
+                logger.info(f"📊 Market Sentiment: {score}/100")
+                return score
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to get market sentiment: {e}")
+            
+        return 0.0
+
+    def _calculate_dynamic_peg(self, market_score: float) -> float:
+        """
+        Calculate Dynamic PEG Threshold based on Market Sentiment.
+        Formula: Base_PEG * (1 + Sensitivity * (Score / 100))
+        """
+        base_peg = self.thresholds['max_peg'] # 1.5
+        sensitivity = 0.2 # +/- 20% adjustment
+        
+        # Normalize score -100 to 100 -> -1.0 to 1.0
+        normalized_score = max(-1.0, min(1.0, market_score / 100.0))
+        
+        adjustment = 1 + (sensitivity * normalized_score)
+        dynamic_peg = base_peg * adjustment
+        
+        # Clamp to reasonable limits (e.g. 1.0 to 2.0)
+        return max(1.0, min(2.0, dynamic_peg))
+
+    def _calculate_sentiment_adjusted_target(self, original_target: float, sentiment_score: float) -> float:
+        """
+        Adjust Analyst Target Price based on quantitative sentiment.
+        Formula: Target * (1 + Sensitivity * (Score / 100))
+        Sensitivity = 0.05 (Sentiment can sway valuation by +/- 5%)
+        """
+        if original_target is None:
+            return None
+            
+        sensitivity = 0.05
+        # Normalize score -100 to 100 -> -1.0 to 1.0
+        normalized_score = max(-1.0, min(1.0, sentiment_score / 100.0))
+        
+        adjustment = 1 + (sensitivity * normalized_score)
+        return original_target * adjustment
+
     def _check_valuation(self, card: StockHealthCard, info: dict, current_price: float):
         """
         Valuation Check:
-        - PEG < Threshold (default 1.5)
-        - Margin of Safety > 10%
+        - PEG < Dynamic Threshold (Adaptive to Market)
+        - Margin of Safety > 10% (Using Sentiment-Adjusted Target)
         """
         pe_ratio = info.get('trailingPE')
         peg_ratio = info.get('pegRatio')
         target_price = info.get('targetMeanPrice')
         
+        # Get Stock-Specific Sentiment (from earlier News Analysis)
+        stock_sentiment_score = 0
+        if 'news_analysis' in card.advanced_metrics and card.advanced_metrics['news_analysis']:
+            stock_sentiment_score = card.advanced_metrics['news_analysis'].get('sentiment_score', 0)
+            
+        # Adjust Target Price
+        adjusted_target = self._calculate_sentiment_adjusted_target(target_price, stock_sentiment_score)
+        
         card.valuation_check['pe_ratio'] = pe_ratio
         card.valuation_check['peg_ratio'] = peg_ratio
         card.valuation_check['fair_value'] = target_price
+        card.valuation_check['adjusted_fair_value'] = adjusted_target # Store for transparency
         
         is_passing = True
         
+        # Dynamic PEG Limit
+        market_score = self.get_market_sentiment()
+        dynamic_max_peg = self._calculate_dynamic_peg(market_score)
+        
+        if abs(market_score) > 20: 
+             direction = "Bullish" if market_score > 0 else "Bearish"
+             card.valuation_check['tags'].append(f"⚖️ Dynamic PEG: {dynamic_max_peg:.2f} ({direction} Market)")
+        else:
+             card.valuation_check['tags'].append(f"⚖️ PEG Limit: {dynamic_max_peg:.2f}")
+
         # PEG Check
-        threshold_peg = self.thresholds['max_peg']
         if peg_ratio is not None:
-            if peg_ratio < 1.0: # Hardcoded "super cheap" check kept for tagging nuance
+            if peg_ratio < 1.0: 
                 card.valuation_check['tags'].append("💎 Undervalued (PEG < 1)")
-            elif peg_ratio < threshold_peg:
-                card.valuation_check['tags'].append(f"🟢 Reasonable Price (PEG < {threshold_peg})")
+            elif peg_ratio < dynamic_max_peg:
+                card.valuation_check['tags'].append(f"🟢 Reasonable Price (PEG < {dynamic_max_peg:.2f})")
             else:
-                card.valuation_check['tags'].append(f"🔴 Overvalued (PEG > {threshold_peg})")
+                card.valuation_check['tags'].append(f"🔴 Overvalued (PEG > {dynamic_max_peg:.2f})")
                 is_passing = False
         else:
-            # If PEG is missing, check PE
             threshold_pe = self.thresholds['max_pe']
             if pe_ratio is not None and pe_ratio > threshold_pe:
                 card.valuation_check['tags'].append(f"🔴 High PE (>{threshold_pe})")
@@ -177,10 +420,16 @@ class GARPStrategy:
             else:
                 card.valuation_check['tags'].append("⚪ No Valuation Data")
 
-        # Margin of Safety Check
-        if target_price is not None and current_price > 0:
-            upside = (target_price - current_price) / current_price
+        # Margin of Safety Check (Using Adjusted Target)
+        if adjusted_target is not None and current_price > 0:
+            upside = (adjusted_target - current_price) / current_price
             card.valuation_check['margin_of_safety'] = upside
+            
+            # Show adjustment tag if significant
+            if abs(stock_sentiment_score) > 20:
+                diff = adjusted_target - target_price
+                sign = "+" if diff > 0 else ""
+                card.valuation_check['tags'].append(f"🧠 Sentiment Adj: {sign}{diff:.2f}")
             
             if upside > 0.3:
                 card.valuation_check['tags'].append(f"🟢 High Upside (+{upside:.0%})")
@@ -217,7 +466,7 @@ class GARPStrategy:
             
         card.technical_setup['is_passing'] = is_passing
 
-    def _determine_overall_status(self, card: StockHealthCard):
+    def _determine_overall_status(self, card: StockHealthCard, market_data: dict = None):
         """
         Final Decision Logic:
         - Must pass Solvency, Quality, and Valuation checks to be 'PASS'.
@@ -229,6 +478,9 @@ class GARPStrategy:
         passed_valuation = card.valuation_check['is_passing']
         passed_technical = card.technical_setup['is_passing']
         
+        if market_data is None:
+            market_data = {}
+        
         # Logic:
         # PASS: Solvency + Quality + Valuation all Pass
         # WATCHLIST: Solvency + Quality Pass, but Valuation Fail OR Technical Fail
@@ -236,8 +488,6 @@ class GARPStrategy:
         
         if passed_solvency and passed_quality and passed_valuation:
              # Even if technicals are "Overbought", fundamental GARP strategy says it's a good stock, maybe wait for entry.
-             # But strictly, if technical is failed (overbought), maybe separate?
-             # For now, stick to core logic.
              if not passed_technical:
                  card.overall_status = OverallStatus.WATCHLIST.value
                  card.overall_reason = "Fundamentals Great, but Technicals Overheated"
@@ -252,3 +502,30 @@ class GARPStrategy:
         else:
             card.overall_status = OverallStatus.REJECT.value
             card.overall_reason = "Fundamental Red Flags"
+
+        # === Advanced Metrics Overrides (Safety First) ===
+        z_score = card.advanced_metrics.get('altman_z_score')
+        f_score = card.advanced_metrics.get('piotroski_score')
+
+        # 1. Bankruptcy Veto (Z-Score < 1.8)
+        if z_score is not None and z_score < 1.8:
+            # Check if it's already rejected to avoid overwriting a more specific reason? 
+            # Actually, Bankruptcy risk is paramount.
+            card.overall_status = OverallStatus.REJECT.value
+            card.overall_reason = f"⛔ Rejected: High Bankruptcy Risk (Z-Score {z_score:.2f})"
+
+        # 2. Weak Financials Veto (F-Score <= 3)
+        if f_score is not None and f_score <= 3:
+            if card.overall_status == OverallStatus.PASS.value:
+                card.overall_status = OverallStatus.WATCHLIST.value
+                card.overall_reason = f"Downgraded: Financials Deteriorating (F-Score {f_score})"
+            elif card.overall_status == OverallStatus.WATCHLIST.value:
+                 # If it was already watchlist, maybe keep it but warn
+                 pass
+
+        # 3. Quality Rescue (Strong F-Score + Safe Z-Score)
+        # S&P 500 giants often fail static Debt/Equity rules due to buybacks, but have immense cash flow.
+        if card.overall_status == OverallStatus.REJECT.value:
+            if f_score is not None and f_score >= 7 and z_score is not None and z_score > 2.99:
+                 card.overall_status = OverallStatus.WATCHLIST.value
+                 card.overall_reason = f"Saved by Quality: High F-Score ({f_score}) & Safe Z-Score"

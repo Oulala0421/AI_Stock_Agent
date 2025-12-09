@@ -1,0 +1,168 @@
+--- Analysis for AAPL ---
+
+=== BALANCE SHEET KEYS ===
+Accounts Payable
+Accounts Receivable
+Accumulated Depreciation
+Available For Sale Securities
+Capital Lease Obligations
+Capital Stock
+Cash And Cash Equivalents
+Cash Cash Equivalents And Short Term Investments
+Cash Equivalents
+Cash Financial
+Commercial Paper
+Common Stock
+Common Stock Equity
+Current Accrued Expenses
+Current Assets
+Current Capital Lease Obligation
+Current Debt
+Current Debt And Capital Lease Obligation
+Current Deferred Liabilities
+Current Deferred Revenue
+Current Liabilities
+Gains Losses Not Affecting Retained Earnings
+Gross PPE
+Income Tax Payable
+Inventory
+Invested Capital
+Investmentin Financial Assets
+Investments And Advances
+Land And Improvements
+Leases
+Long Term Capital Lease Obligation
+Long Term Debt
+Long Term Debt And Capital Lease Obligation
+Machinery Furniture Equipment
+Net Debt
+Net PPE
+Net Tangible Assets
+Non Current Deferred Assets
+Non Current Deferred Taxes Assets
+Ordinary Shares Number
+Other Current Assets
+Other Current Borrowings
+Other Current Liabilities
+Other Equity Adjustments
+Other Investments
+Other Non Current Assets
+Other Non Current Liabilities
+Other Properties
+Other Receivables
+Other Short Term Investments
+Payables
+Payables And Accrued Expenses
+Properties
+Receivables
+Retained Earnings
+Share Issued
+Stockholders Equity
+Tangible Book Value
+Total Assets
+Total Capitalization
+Total Debt
+Total Equity Gross Minority Interest
+Total Liabilities Net Minority Interest
+Total Non Current Assets
+Total Non Current Liabilities Net Minority Interest
+Total Tax Payable
+Tradeand Other Payables Non Current
+Treasury Shares Number
+Working Capital
+
+=== FINANCIALS (INCOME STATEMENT) KEYS ===
+Basic Average Shares
+Basic EPS
+Cost Of Revenue
+Diluted Average Shares
+Diluted EPS
+Diluted NI Availto Com Stockholders
+EBIT
+EBITDA
+Gross Profit
+Interest Expense
+Interest Expense Non Operating
+Interest Income
+Interest Income Non Operating
+Net Income
+Net Income Common Stockholders
+Net Income Continuous Operations
+Net Income From Continuing And Discontinued Operation
+Net Income From Continuing Operation Net Minority Interest
+Net Income Including Noncontrolling Interests
+Net Interest Income
+Net Non Operating Interest Income Expense
+Normalized EBITDA
+Normalized Income
+Operating Expense
+Operating Income
+Operating Revenue
+Other Income Expense
+Other Non Operating Income Expenses
+Pretax Income
+Reconciled Cost Of Revenue
+Reconciled Depreciation
+Research And Development
+Selling General And Administration
+Tax Effect Of Unusual Items
+Tax Provision
+Tax Rate For Calcs
+Total Expenses
+Total Operating Income As Reported
+Total Revenue
+
+=== CASH FLOW KEYS ===
+Beginning Cash Position
+Capital Expenditure
+Cash Dividends Paid
+Cash Flow From Continuing Financing Activities
+Cash Flow From Continuing Investing Activities
+Cash Flow From Continuing Operating Activities
+Change In Account Payable
+Change In Inventory
+Change In Other Current Assets
+Change In Other Current Liabilities
+Change In Other Working Capital
+Change In Payable
+Change In Payables And Accrued Expense
+Change In Receivables
+Change In Working Capital
+Changes In Account Receivables
+Changes In Cash
+Common Stock Dividend Paid
+Common Stock Issuance
+Common Stock Payments
+Deferred Income Tax
+Deferred Tax
+Depreciation Amortization Depletion
+Depreciation And Amortization
+End Cash Position
+Financing Cash Flow
+Free Cash Flow
+Income Tax Paid Supplemental Data
+Interest Paid Supplemental Data
+Investing Cash Flow
+Issuance Of Capital Stock
+Issuance Of Debt
+Long Term Debt Issuance
+Long Term Debt Payments
+Net Business Purchase And Sale
+Net Common Stock Issuance
+Net Income From Continuing Operations
+Net Investment Purchase And Sale
+Net Issuance Payments Of Debt
+Net Long Term Debt Issuance
+Net Other Financing Charges
+Net Other Investing Changes
+Net PPE Purchase And Sale
+Net Short Term Debt Issuance
+Operating Cash Flow
+Other Non Cash Items
+Purchase Of Business
+Purchase Of Investment
+Purchase Of PPE
+Repayment Of Debt
+Repurchase Of Capital Stock
+Sale Of Investment
+Stock Based Compensation

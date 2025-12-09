@@ -110,7 +110,12 @@ def format_minimal_report(market_status, stock_cards):
     report = [f"🤖 【AI 投資戰情】"]
     
     # 市場氣象
-    vix_display = f"VIX {market_status.get('vix', 'N/A')}"
+    vix_val = market_status.get('vix')
+    if isinstance(vix_val, (int, float)):
+        vix_display = f"VIX {vix_val:.2f}"
+    else:
+        vix_display = f"VIX {vix_val}"
+    
     # Robust handling for spy stage/trend
     spy_trend = "🌤️ 多頭" if market_status.get('is_bullish') else "⛈️ 空頭"
     if 'stage' in market_status: # Fallback to stage string if present
@@ -170,8 +175,8 @@ def format_minimal_report(market_status, stock_cards):
         # For now, I will implement as requested, but user needs to adhere to how main.py works.
         # Use getattr safely.
         if hasattr(card, 'news_summary_str'):
-             # If main.py attaches the string
-             report.append(f"💡 {card.news_summary_str}")
+             # If main.py attaches the string (which already includes icons like 💡 or 📰)
+             report.append(f"{card.news_summary_str}")
         elif hasattr(card, 'raw_data') and isinstance(card.raw_data, dict):
              # Try to find reason in raw structure if available
              pass

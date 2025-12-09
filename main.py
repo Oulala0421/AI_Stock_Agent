@@ -122,9 +122,10 @@ def run_analysis(mode="post_market", dry_run=False):
                                     
                                     if analysis_result:
                                         sentiment_emoji = "😃" if analysis_result['sentiment'] == "Positive" else ("😞" if analysis_result['sentiment'] == "Negative" else "😐")
-                                        headlines = searcher.format_news_summary(news_list, max_articles=2)
-                                        news_summary_str = f"💡 AI: {sentiment_emoji} {analysis_result['sentiment']}\n💬 {analysis_result['summary_reason']}\n{headlines}"
+                                        # headlines = searcher.format_news_summary(news_list, max_articles=2) # [REMOVED] User prefers cleaner AI summary
+                                        news_summary_str = f"💡 AI: {sentiment_emoji} {analysis_result['sentiment']}\n💬 {analysis_result['summary_reason']}"
                                     else:
+                                        # Fallback: Show headlines if AI fails
                                         news_summary_str = searcher.format_news_summary(news_list, max_articles=2)
                                 else:
                                     print("      ⚠️ 無近期新聞")

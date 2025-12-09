@@ -142,6 +142,7 @@ class NewsAgent:
             Structured analysis (JSON):
             {
                 "sentiment": "Positive/Negative/Neutral",
+                "sentiment_score": 75,  # -100 to +100
                 "moat_impact": "Strengthened/Weakened/Unchanged",
                 "prediction": "Bullish/Bearish/Neutral",
                 "confidence": 0.85,  # 0.0 - 1.0
@@ -164,6 +165,7 @@ class NewsAgent:
             logger.info(f"⚠️  No news for {symbol}, returning neutral analysis")
             return {
                 "sentiment": "Neutral",
+                "sentiment_score": 0,
                 "moat_impact": "Unchanged",
                 "prediction": "Neutral",
                 "confidence": 0.5,
@@ -200,6 +202,7 @@ class NewsAgent:
                 logger.info("🔄 Using fallback neutral analysis")
                 return {
                     "sentiment": "Neutral",
+                    "sentiment_score": 0,
                     "moat_impact": "Unchanged",
                     "prediction": "Neutral",
                     "confidence": 0.5,
@@ -210,9 +213,9 @@ class NewsAgent:
             analysis = json.loads(response.text)
             
             # Validate required fields
-            required_fields = ["sentiment", "moat_impact", "prediction", "confidence", "summary_reason"]
+            required_fields = ["sentiment", "sentiment_score", "moat_impact", "prediction", "confidence", "summary_reason"]
             if all(field in analysis for field in required_fields):
-                logger.info(f"✅ Analysis complete: {analysis['sentiment']} ({analysis['confidence']:.0%} confidence)")
+                logger.info(f"✅ Analysis complete: {analysis['sentiment']} (Score: {analysis['sentiment_score']}, Conf: {analysis['confidence']:.0%})")
                 return analysis
             else:
                 logger.warning(f"⚠️  Incomplete analysis response: {analysis}")
@@ -264,14 +267,21 @@ News Articles:
 
 Analysis Steps:
 1. Assess sentiment (Positive/Negative/Neutral)
-2. Evaluate moat impact (Strengthened/Weakened/Unchanged)
-3. Predict trend (Bullish/Bearish/Neutral)
-4. Determine confidence (0.0-1.0)
-5. Summarize key reason (Traditional Chinese, <40 chars)
+2. Assign Sentiment Score (-100 to +100)
+    - -100: Extreme Fear / Bankruptcy Risk
+    - -50: Negative Trend
+    - 0: Neutral / Mixed
+    - +50: Positive Trend
+    - +100: Extreme Greed / Breakthrough
+3. Evaluate moat impact (Strengthened/Weakened/Unchanged)
+4. Predict trend (Bullish/Bearish/Neutral)
+5. Determine confidence (0.0-1.0)
+6. Summarize key reason (Traditional Chinese, <40 chars)
 
 Output JSON format (no markdown):
 {{
     "sentiment": "Positive|Negative|Neutral",
+    "sentiment_score": Integer (-100 to 100),
     "moat_impact": "Strengthened|Weakened|Unchanged",
     "prediction": "Bullish|Bearish|Neutral",
     "confidence": 0.XX,
