@@ -125,15 +125,16 @@ def init_mongo_connection():
         return None
     
     try:
-        # [Fix] Force TLS and allow invalid certs (temporary workaround for Streamlit Cloud <-> Atlas handshake)
+        # [Fix] Use certifi for correct CA bundle
         client = MongoClient(uri, 
                              serverSelectionTimeoutMS=5000,
-                             tls=True,
-                             tlsAllowInvalidCertificates=True)
+                             tlsCAFile=certifi.where())
         client.admin.command('ping')
         return client
     except Exception as e:
-        st.error(f"❌ Connection Error: {e}")
+        import ssl
+        st.sidebar.error(f"❌ DB Error: {e}")
+        st.sidebar.warning(f"🔍 Debug Info: Python SSL: {ssl.OPENSSL_VERSION}")
         return None
 
 

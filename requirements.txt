@@ -14,9 +14,9 @@ tenacity
 pandas_market_calendars
 pyyaml
 flask
-pymongo>=4.6.0
+pymongo[srv]==4.6.1
 google-search-results
 streamlit
 matplotlib
-dnspython
+dnspython==2.4.2
 certifi
