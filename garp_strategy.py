@@ -1,16 +1,31 @@
 import yfinance as yf
 from data_models import StockHealthCard, OverallStatus
 from market_data import fetch_and_analyze
+from config import Config
+from logger import logger
 
 class GARPStrategy:
     def __init__(self):
         self.strategy_type = "GARP"
+        self.params = Config.get('GARP', {})
+        # Defaults if config missing, mapped to config.yaml structure
+        solvency_config = self.params.get('solvency', {})
+        quality_config = self.params.get('quality', {})
+        valuation_config = self.params.get('valuation', {})
+        
+        self.thresholds = {
+            'max_debt': solvency_config.get('max_debt_to_equity', 200),
+            'min_current': solvency_config.get('min_current_ratio', 1.0),
+            'min_roe': quality_config.get('min_roe', 0.15),
+            'max_peg': valuation_config.get('max_peg', 1.5),
+            'max_pe': valuation_config.get('max_pe', 40)
+        }
 
     def analyze(self, symbol: str) -> StockHealthCard:
         """
         Analyze a stock using the GARP strategy and return a StockHealthCard.
         """
-        print(f"🔍 Analyzing {symbol} with GARP Strategy...")
+        logger.info(f"🔍 Analyzing {symbol} with GARP Strategy...")
         
         # 1. Fetch Data
         try:
@@ -19,12 +34,12 @@ class GARPStrategy:
             market_data = fetch_and_analyze(symbol)
             
             if not market_data:
-                print(f"⚠️ No market data found for {symbol}")
+                logger.warning(f"⚠️ No market data found for {symbol}")
                 return self._create_empty_card(symbol)
                 
             price = market_data.get('price', 0.0)
         except Exception as e:
-            print(f"❌ Error fetching data for {symbol}: {e}")
+            logger.error(f"❌ Error fetching data for {symbol}: {e}")
             return self._create_empty_card(symbol)
 
         # Initialize Card
@@ -55,8 +70,8 @@ class GARPStrategy:
     def _check_solvency(self, card: StockHealthCard, info: dict):
         """
         Solvency Check:
-        - Debt/Equity < 200% (or sector adjusted) -> Pass
-        - Current Ratio > 1.0 -> Pass
+        - Debt/Equity < Threshold (default 200%)
+        - Current Ratio > Threshold (default 1.0)
         """
         debt_to_equity = info.get('debtToEquity')
         current_ratio = info.get('currentRatio')
@@ -66,20 +81,22 @@ class GARPStrategy:
         
         is_passing = True
         
-        # Debt to Equity Check (Threshold: 200)
+        # Debt to Equity Check
+        threshold_debt = self.thresholds['max_debt']
         if debt_to_equity is not None:
-            if debt_to_equity > 200:
-                card.solvency_check['tags'].append("🔴 High Debt")
+            if debt_to_equity > threshold_debt:
+                card.solvency_check['tags'].append(f"🔴 High Debt (>{threshold_debt}%)")
                 is_passing = False
             else:
                 card.solvency_check['tags'].append("🟢 Healthy Debt")
         else:
              card.solvency_check['tags'].append("⚪ No Debt Data")
 
-        # Current Ratio Check (Threshold: 1.0)
+        # Current Ratio Check
+        threshold_current = self.thresholds['min_current']
         if current_ratio is not None:
-            if current_ratio < 1.0:
-                card.solvency_check['tags'].append("🔴 Low Liquidity")
+            if current_ratio < threshold_current:
+                card.solvency_check['tags'].append(f"🔴 Low Liquidity (<{threshold_current})")
                 is_passing = False
             else:
                 card.solvency_check['tags'].append("🟢 Good Liquidity")
@@ -91,8 +108,8 @@ class GARPStrategy:
     def _check_quality(self, card: StockHealthCard, info: dict):
         """
         Quality Check:
-        - ROE > 15% -> Pass
-        - Gross Margin > 0 (positive) -> Pass
+        - ROE > Threshold (default 15%)
+        - Gross Margin > 0 (positive)
         """
         roe = info.get('returnOnEquity')
         gross_margins = info.get('grossMargins')
@@ -102,10 +119,11 @@ class GARPStrategy:
         
         is_passing = True
         
-        # ROE Check (Threshold: 0.15)
+        # ROE Check
+        threshold_roe = self.thresholds['min_roe']
         if roe is not None:
-            if roe > 0.15:
-                card.quality_check['tags'].append("💎 High ROE")
+            if roe > threshold_roe:
+                 card.quality_check['tags'].append(f"💎 High ROE (>{threshold_roe:.0%})")
             elif roe < 0:
                 card.quality_check['tags'].append("🔴 Negative ROE")
                 is_passing = False
@@ -127,8 +145,8 @@ class GARPStrategy:
     def _check_valuation(self, card: StockHealthCard, info: dict, current_price: float):
         """
         Valuation Check:
-        - PEG < 1.5 -> Pass (Growth at Reasonable Price)
-        - Margin of Safety (based on Target Price vs Current Price) > 10% -> Pass
+        - PEG < Threshold (default 1.5)
+        - Margin of Safety > 10%
         """
         pe_ratio = info.get('trailingPE')
         peg_ratio = info.get('pegRatio')
@@ -140,89 +158,97 @@ class GARPStrategy:
         
         is_passing = True
         
-        # PEG Check (Threshold: 1.5)
+        # PEG Check
+        threshold_peg = self.thresholds['max_peg']
         if peg_ratio is not None:
-            if peg_ratio < 1.0:
+            if peg_ratio < 1.0: # Hardcoded "super cheap" check kept for tagging nuance
                 card.valuation_check['tags'].append("💎 Undervalued (PEG < 1)")
-            elif peg_ratio < 1.5:
-                card.valuation_check['tags'].append("🟢 Reasonable Price (PEG < 1.5)")
+            elif peg_ratio < threshold_peg:
+                card.valuation_check['tags'].append(f"🟢 Reasonable Price (PEG < {threshold_peg})")
             else:
-                card.valuation_check['tags'].append("🔴 Overvalued (PEG > 1.5)")
-                is_passing = False # Strict on PEG for GARP
+                card.valuation_check['tags'].append(f"🔴 Overvalued (PEG > {threshold_peg})")
+                is_passing = False
         else:
-             card.valuation_check['tags'].append("⚪ No PEG Data")
+            # If PEG is missing, check PE
+            threshold_pe = self.thresholds['max_pe']
+            if pe_ratio is not None and pe_ratio > threshold_pe:
+                card.valuation_check['tags'].append(f"🔴 High PE (>{threshold_pe})")
+                is_passing = False
+            else:
+                card.valuation_check['tags'].append("⚪ No Valuation Data")
 
-        # Margin of Safety
-        margin_of_safety = 0.0
-        if target_price and current_price > 0:
-            margin_of_safety = (target_price - current_price) / target_price
-            card.valuation_check['margin_of_safety'] = margin_of_safety
+        # Margin of Safety Check
+        if target_price is not None and current_price > 0:
+            upside = (target_price - current_price) / current_price
+            card.valuation_check['margin_of_safety'] = upside
             
-            if margin_of_safety > 0.2:
-                card.valuation_check['tags'].append("💎 Deep Value (>20% Upside)")
-            elif margin_of_safety > 0.1:
-                card.valuation_check['tags'].append("🟢 Good Value (>10% Upside)")
-            elif margin_of_safety < -0.1:
-                card.valuation_check['tags'].append("🔴 Overpriced")
-                # Don't fail solely on price if PEG is good, but it's a warning
-        
+            if upside > 0.3:
+                card.valuation_check['tags'].append(f"🟢 High Upside (+{upside:.0%})")
+            elif upside < 0:
+                card.valuation_check['tags'].append("🔴 Over Analyst Target")
+        else:
+             card.valuation_check['tags'].append("⚪ No Analyst Targets")
+
         card.valuation_check['is_passing'] = is_passing
 
     def _check_technical(self, card: StockHealthCard, market_data: dict):
         """
         Technical Setup:
-        - RSI < 70 (Not overbought)
-        - Trend (MA50 > MA200) -> Bullish
+        - RSI (14) between 30 and 70 (Not overbought/oversold)
+        - SMA200 > Current Price (Long term Trend) - *Wait, GARP usually likes Uptrend*
+        - Let's stick to simple RSI for now effectively.
         """
-        if not market_data:
-            return
-
-        momentum = market_data.get('momentum', {})
-        trend = market_data.get('trend', {})
-        
-        rsi = momentum.get('rsi')
-        ma50_above_ma200 = trend.get('ma50_above_ma200')
+        rsi = market_data.get('rsi')
         
         card.technical_setup['rsi'] = rsi
-        card.technical_setup['trend_status'] = "Bullish" if ma50_above_ma200 else "Bearish"
         
-        # RSI Check
+        is_passing = True
+        
         if rsi is not None:
             if rsi > 70:
-                card.technical_setup['tags'].append("🔴 Overbought")
+                card.technical_setup['tags'].append(f"🔴 Overbought (RSI {rsi:.0f})")
+                is_passing = False
             elif rsi < 30:
-                card.technical_setup['tags'].append("💎 Oversold")
+                card.technical_setup['tags'].append(f"🟢 Oversold (RSI {rsi:.0f})")
             else:
-                card.technical_setup['tags'].append("🟢 Neutral RSI")
-        
-        # Trend Check
-        if ma50_above_ma200:
-            card.technical_setup['tags'].append("🟢 Golden Cross Trend")
+                card.technical_setup['tags'].append("🟡 Neutral Technicals")
         else:
-            card.technical_setup['tags'].append("🔴 Death Cross Trend")
+            card.technical_setup['tags'].append("⚪ No Technical Data")
+            
+        card.technical_setup['is_passing'] = is_passing
 
     def _determine_overall_status(self, card: StockHealthCard):
         """
-        Overall Status:
-        - PASS: Solvency, Quality, Valuation passing.
-        - WATCHLIST: One failure allowed (except Solvency).
-        - REJECT: Critical failures.
+        Final Decision Logic:
+        - Must pass Solvency, Quality, and Valuation checks to be 'PASS'.
+        - If any check fails, it goes to 'REJECT' or 'WATCHLIST' depending on severity.
         """
-        solvency_pass = card.solvency_check['is_passing']
-        quality_pass = card.quality_check['is_passing']
-        valuation_pass = card.valuation_check['is_passing']
         
-        # Collect Red Flags
-        for check in [card.solvency_check, card.quality_check, card.valuation_check, card.technical_setup]:
-            for tag in check.get('tags', []):
-                if "🔴" in tag:
-                    card.red_flags.append(tag)
-
-        if solvency_pass and quality_pass and valuation_pass:
-            card.overall_status = OverallStatus.PASS.value
-        elif not solvency_pass:
-            card.overall_status = OverallStatus.REJECT.value
-        elif quality_pass or valuation_pass: # At least one of Quality or Valuation is good, but not both
-             card.overall_status = OverallStatus.WATCHLIST.value
+        passed_solvency = card.solvency_check['is_passing']
+        passed_quality = card.quality_check['is_passing']
+        passed_valuation = card.valuation_check['is_passing']
+        passed_technical = card.technical_setup['is_passing']
+        
+        # Logic:
+        # PASS: Solvency + Quality + Valuation all Pass
+        # WATCHLIST: Solvency + Quality Pass, but Valuation Fail OR Technical Fail
+        # REJECT: Solvency Fail OR Quality Fail
+        
+        if passed_solvency and passed_quality and passed_valuation:
+             # Even if technicals are "Overbought", fundamental GARP strategy says it's a good stock, maybe wait for entry.
+             # But strictly, if technical is failed (overbought), maybe separate?
+             # For now, stick to core logic.
+             if not passed_technical:
+                 card.overall_status = OverallStatus.WATCHLIST.value
+                 card.overall_reason = "Fundamentals Great, but Technicals Overheated"
+             else:
+                 card.overall_status = OverallStatus.PASS.value
+                 card.overall_reason = "All Systems Go (GARP Approved)"
+        
+        elif passed_solvency and passed_quality and not passed_valuation:
+            card.overall_status = OverallStatus.WATCHLIST.value
+            card.overall_reason = "Great Company, Expensive Price"
+            
         else:
             card.overall_status = OverallStatus.REJECT.value
+            card.overall_reason = "Fundamental Red Flags"

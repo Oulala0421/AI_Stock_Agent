@@ -13,18 +13,19 @@ from market_status import is_market_open, get_economic_events, get_earnings_cale
 from data_models import OverallStatus
 from config import Config
 from database_manager import DatabaseManager
+from logger import logger # [NEW]
 
 def run_analysis(mode="post_market", dry_run=False):
-    print(f"🚀 AI Stock Agent V2.1 (Cloud Integrated) 啟動中...")
-    print(f"   模式: {mode} | Dry Run: {dry_run}")
+    logger.info(f"🚀 AI Stock Agent V2.1 (Cloud Integrated) 啟動中...")
+    logger.info(f"   模式: {mode} | Dry Run: {dry_run}")
     
     # 0. Check Market Status
     market_is_open = is_market_open()
     if not market_is_open:
-        print("😴 今日美股休市，執行休市簡報模式。")
+        logger.info("😴 今日美股休市，執行休市簡報模式。")
     
     # 0.1 Market Regime
-    print("\n📊 市場體質檢測中...")
+    logger.info("📊 市場體質檢測中...")
     market_regime = get_market_regime()
     print(f"   SPY: ${market_regime['spy_price']:.2f} | Bullish: {market_regime['is_bullish']}")
     print(f"   VIX: {market_regime['vix']:.2f}")

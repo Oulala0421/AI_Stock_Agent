@@ -16,3 +16,5 @@ pyyaml
 flask
 pymongo>=4.6.0
 google-search-results
+streamlit
+matplotlib

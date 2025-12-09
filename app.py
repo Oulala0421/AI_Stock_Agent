@@ -316,16 +316,26 @@ def generate_card_html(stock):
     """
     Generate the HTML for a single stock card using Visual Specs
     """
-    raw_data = stock.get('raw_data', {})
+    # [Fix] Access fields directly from document root (flat structure)
     symbol = stock.get('symbol', 'N/A')
     price = stock.get('price', 0.0)
-    status = stock.get('status', 'UNKNOWN')
+    status = stock.get('overall_status', 'UNKNOWN') # Note: DB uses 'overall_status', previous code used 'status'
+    if status == 'UNKNOWN': status = stock.get('status', 'UNKNOWN') # Fallback
     
-    # Prediction data
-    pred_1w = raw_data.get('predicted_return_1w')
-    confidence = raw_data.get('confidence_score')
-    summary = raw_data.get('summary_reason', '無分析數據')
+    # Prediction data (Top level fields)
+    pred_1w = stock.get('predicted_return_1w')
+    confidence = stock.get('confidence_score')
     
+    # Summary extraction: prefer news_summary_str, fallback to report or summary_reason
+    summary_text = stock.get('news_summary_str')
+    if not summary_text:
+        # Try finding it in 'summary_reason' (legacy) or just use a generic message
+        summary_text = stock.get('summary_reason', '無分析數據')
+    
+    # Clean up summary for display (remove newlines for card view)
+    if summary_text:
+        summary_text = summary_text.replace('\n', ' ').strip()
+
     # Determine Style Class
     if status == 'PASS':
         card_class = "card-pass"
@@ -381,7 +391,7 @@ def generate_card_html(stock):
         </div>
         
         <div class="card-footer">
-            💡 {summary[:80] if len(summary) <= 80 else summary[:77] + '...'}
+            💡 {summary_text[:80] if len(summary_text) <= 80 else summary_text[:77] + '...'}
         </div>
     </div>
     """
@@ -392,14 +402,15 @@ def render_stock_card_native(stock):
     """
     Render stock card using Streamlit native components + CSS
     """
-    raw_data = stock.get('raw_data', {})
+    # [Fix] Access fields directly from document root
     symbol = stock.get('symbol', 'N/A')
     price = stock.get('price', 0.0)
-    status = stock.get('status', 'UNKNOWN')
+    status = stock.get('overall_status', 'UNKNOWN')
+    if status == 'UNKNOWN': status = stock.get('status', 'UNKNOWN')
     
     # Prediction data
-    pred_1w = raw_data.get('predicted_return_1w')
-    confidence = raw_data.get('confidence_score')
+    pred_1w = stock.get('predicted_return_1w')
+    confidence = stock.get('confidence_score')
     summary = raw_data.get('summary_reason', '無分析數據')
     
     # Determine色彩

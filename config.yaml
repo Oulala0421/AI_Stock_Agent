@@ -40,3 +40,15 @@ strategy:
 reporting:
   max_length_telegram: 4000
   max_length_line: 5000
+
+# [NEW] GARP Strategy Parameters (Centralized)
+garp:
+  solvency:
+    max_debt_to_equity: 200  # Percentage
+    min_current_ratio: 1.0
+  quality:
+    min_roe: 0.15            # 15%
+  valuation:
+    max_peg: 1.5             # Growth at Reasonable Price
+    max_pe: 40               # Cap for high growth
+

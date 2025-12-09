@@ -53,6 +53,7 @@ def load_config():
         "MONGODB_URI": MONGODB_URI,
         "DASHBOARD_URL": DASHBOARD_URL, # [NEW]
         "STRATEGY": config.get('strategy', {}),
+        "GARP": config.get('garp', {}), # [NEW]
         "MARKET": config.get('market', {}),
         "CAPITAL_ALLOCATION": config.get('capital_allocation', {}),
         "POSITION_LIMITS": config.get('position_limits', {})
