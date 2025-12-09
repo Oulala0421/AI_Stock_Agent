@@ -8,10 +8,12 @@ Features:
 - Sparkline Trend Visualization
 - Responsive Grid Layout
 - Deep Dive Analysis Expanders
-"""
-
 import streamlit as st
 import os
+import matplotlib
+matplotlib.use('Agg') # [Fix] For headless server stability
+import matplotlib.pyplot as plt
+from datetime import datetime
 from datetime import datetime
 from pymongo import MongoClient, DESCENDING
 import pandas as pd
