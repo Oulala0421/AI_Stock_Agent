@@ -207,7 +207,7 @@ class DatabaseManager:
         try:
             collection = self._db.daily_snapshots
             
-            # Prepare document
+            # Prepare document - REMOVE created_at from here to allow setOnInsert to handle it
             doc = {
                 "date": date,
                 "symbol": card.symbol,
@@ -215,7 +215,7 @@ class DatabaseManager:
                 "status": card.overall_status if isinstance(card.overall_status, str) else card.overall_status.value,
                 "report": report_text,
                 "raw_data": self._serialize_card(card),
-                "created_at": datetime.utcnow(),
+                # "created_at": datetime.utcnow(),  <-- REMOVED to avoid conflict
                 "updated_at": datetime.utcnow()
             }
             
@@ -362,6 +362,32 @@ class DatabaseManager:
         if self._client:
             self._client.close()
             logger.info("🔌 MongoDB 連線已關閉")
+
+    def get_latest_stock_data(self, symbol: str) -> Optional[Dict]:
+        """
+        Get absolute latest data for cache checking (including today)
+        Used by Prediction Engine for caching
+        """
+        if not self.enabled:
+            return None
+        
+        try:
+            # Find latest regardless of date
+            result = self._db.daily_snapshots.find_one(
+                {"symbol": symbol},
+                sort=[("updated_at", DESCENDING)]
+            )
+            
+            if result:
+                # Map mongo fields to expected API
+                # prediction_engine expects 'last_updated'
+                result['last_updated'] = result.get('updated_at')
+                return result
+            return None
+            
+        except Exception as e:
+            logger.error(f"   ├─ ⚠️ 快取查詢失敗: {symbol} - {e}")
+            return None
 
 
 # For backward compatibility with existing code
