@@ -112,6 +112,8 @@ CUSTOM_CSS = r"""
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 
+import certifi
+
 @st.cache_resource
 def init_mongo_connection():
     uri = os.getenv("MONGODB_URI")
@@ -123,8 +125,10 @@ def init_mongo_connection():
         return None
     
     try:
-        # Use simple client with mostly default settings (dnspython handles SRV)
-        client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+        # Use certifi for SSL context to fix handshake errors
+        client = MongoClient(uri, 
+                             serverSelectionTimeoutMS=5000,
+                             tlsCAFile=certifi.where())
         client.admin.command('ping')
         return client
     except Exception as e:

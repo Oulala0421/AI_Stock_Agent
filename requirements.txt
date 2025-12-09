@@ -19,3 +19,4 @@ google-search-results
 streamlit
 matplotlib
 dnspython
+certifi
