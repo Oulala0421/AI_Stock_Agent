@@ -125,10 +125,11 @@ def init_mongo_connection():
         return None
     
     try:
-        # Use certifi for SSL context to fix handshake errors
+        # [Fix] Force TLS and allow invalid certs (temporary workaround for Streamlit Cloud <-> Atlas handshake)
         client = MongoClient(uri, 
                              serverSelectionTimeoutMS=5000,
-                             tlsCAFile=certifi.where())
+                             tls=True,
+                             tlsAllowInvalidCertificates=True)
         client.admin.command('ping')
         return client
     except Exception as e:
