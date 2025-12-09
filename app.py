@@ -344,7 +344,7 @@ def main():
                 st.line_chart(pd.DataFrame(sparkline[::-1], columns=['Price']), height=50, use_container_width=True)
 
             # [Feature] Tabs for detailed view
-            tab_ai, tab_fund, tab_tech = st.expander(f"💡 AI 分析與詳細數據", expanded=False).tabs(["🧠 AI 分析", "📊 基本面數據", "📉 技術指標"])
+            tab_ai, tab_fund, tab_tech = st.expander(f"💡 AI 分析與詳細數據", expanded=True).tabs(["🧠 AI 分析", "📊 基本面數據", "📉 技術指標"])
             
             with tab_ai:
                 report = stock.get('report', '尚無分析報告')
