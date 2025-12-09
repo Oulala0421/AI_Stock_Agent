@@ -343,16 +343,75 @@ def main():
                 st.caption("7日走勢")
                 st.line_chart(pd.DataFrame(sparkline[::-1], columns=['Price']), height=50, use_container_width=True)
 
-            # Details & News
-            with st.expander("💡 AI 分析與總結"):
-                news_summary = stock.get('news_summary_str')
-                if news_summary:
-                    st.info(news_summary)
+            # [Feature] Tabs for detailed view
+            tab_ai, tab_fund, tab_tech = st.expander(f"💡 AI 分析與詳細數據", expanded=False).tabs(["🧠 AI 分析", "📊 基本面數據", "📉 技術指標"])
+            
+            with tab_ai:
+                report = stock.get('report', '尚無分析報告')
+                st.markdown(report)
+            
+            with tab_fund:
+                # Extract Fundamental Data
+                solvency = raw_data.get('solvency_check', {})
+                quality = raw_data.get('quality_check', {})
+                valuation = raw_data.get('valuation_check', {})
+                
+                f1, f2, f3 = st.columns(3)
+                with f1:
+                    st.markdown("**💰 償債能力**")
+                    debt_eq = solvency.get('debt_to_equity')
+                    d_color = "red" if debt_eq and debt_eq > 200 else "green"
+                    st.markdown(f"- 負債權益比: :{d_color}[{debt_eq}%]" if debt_eq else "- 負債權益比: N/A")
+                    st.markdown(f"- 流動比率: {solvency.get('current_ratio', 'N/A')}")
+                
+                with f2:
+                    st.markdown("**💎 獲利品質**")
+                    roe = quality.get('roe')
+                    r_color = "green" if roe and roe > 0.15 else "orange"
+                    st.markdown(f"- ROE: :{r_color}[{roe:.1%}]" if roe else "- ROE: N/A")
+                    st.markdown(f"- 毛利率: {quality.get('gross_margin', 'N/A')}")
+                    
+                with f3:
+                    st.markdown("**🏷️ 估值**")
+                    pe = valuation.get('pe_ratio')
+                    peg = valuation.get('peg_ratio')
+                    st.markdown(f"- P/E: {pe:.1f}" if pe else "- P/E: N/A")
+                    st.markdown(f"- PEG: {peg:.2f}" if peg else "- PEG: N/A")
+
+            with tab_tech:
+                # Extract Technical Data
+                technical = raw_data.get('technical_setup', {})
+                volatility = raw_data.get('volatility', {})  # Assuming volatility is stored similarly if available
+                
+                t1, t2 = st.columns(2)
+                with t1:
+                    st.markdown("**📈 趨勢與動能**")
+                    rsi = technical.get('rsi')
+                    rsi_val = f"{rsi:.1f}" if rsi else "N/A"
+                    r_col = "red" if rsi and rsi > 70 else "green" if rsi and rsi < 30 else "gray"
+                    st.markdown(f"- RSI (14): :{r_col}[{rsi_val}]")
+                    st.markdown(f"- 趨勢狀態: {technical.get('trend_status', 'N/A')}")
+                
+                with t2:
+                    st.markdown("**🌊 波動率**")
+                    atr = volatility.get('atr') # Check if strategy saves this, otherwise careful
+                    st.markdown(f"- ATR: {atr:.2f}" if atr else "- ATR: N/A")
+                    
+                # Tags
+                st.markdown("---")
+                tags = raw_data.get('solvency_check', {}).get('tags', []) + \
+                       raw_data.get('quality_check', {}).get('tags', []) + \
+                       raw_data.get('valuation_check', {}).get('tags', []) + \
+                       raw_data.get('technical_setup', {}).get('tags', [])
+                
+                if tags:
+                    st.markdown("**🏷️ 標籤:** " + " ".join([f"`{t}`" for t in tags]))
+                    if news_summary: # Check if news_summary exists before displaying
+                        st.info(news_summary)
                 else:
                     st.write("暫無新聞分析")
                 
                 # Tech Tags
-                st.markdown("---")
                 # Try to get tags from raw dictionary if available, relying on flat structure??
                 # Wait, database manager flattens it? 
                 # StockHealthCard stores checks as DICTS in MongoDB.
