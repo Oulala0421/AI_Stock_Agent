@@ -34,6 +34,10 @@ def load_config():
         print("⚠️  警告: MONGODB_URI 環境變數未設定")
         print("💡 提示: 將使用 SQLite 作為後備方案")
         print("   若要使用 MongoDB，請在 .env 中設定 MONGODB_URI")
+
+    # [NEW] Dashboard Configuration
+    # 如果 .env 沒設定，預設為 None (不顯示連結)
+    DASHBOARD_URL = os.getenv("DASHBOARD_URL", None)
     
     return {
         "TOTAL_CAPITAL": TOTAL_CAPITAL,
@@ -47,6 +51,7 @@ def load_config():
         "LINE_USER_ID": LINE_USER_ID,
         "LINE_GROUP_ID": LINE_GROUP_ID,
         "MONGODB_URI": MONGODB_URI,
+        "DASHBOARD_URL": DASHBOARD_URL, # [NEW]
         "STRATEGY": config.get('strategy', {}),
         "MARKET": config.get('market', {}),
         "CAPITAL_ALLOCATION": config.get('capital_allocation', {}),

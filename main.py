@@ -6,7 +6,7 @@ from garp_strategy import GARPStrategy
 from news_agent import NewsAgent
 from google_news_searcher import GoogleNewsSearcher
 from prediction_engine import get_predicted_return
-from report_formatter import format_stock_report
+from report_formatter import format_stock_report, format_minimal_report
 from notifier import send_line, send_telegram
 from sheet_manager import get_stock_lists
 from market_status import is_market_open, get_economic_events, get_earnings_calendar
@@ -29,15 +29,13 @@ def run_analysis(mode="post_market", dry_run=False):
     print(f"   SPY: ${market_regime['spy_price']:.2f} | Bullish: {market_regime['is_bullish']}")
     print(f"   VIX: {market_regime['vix']:.2f}")
     
-    # 0.2 Market Outlook (Fact-Opinion Decoupled Logic)
+    # 0.2 Market Outlook (Hybrid Mode)
     print("\n🔮 生成市場展望 (Hybrid Mode)...")
     
-    # Step A: Get Hard Facts (Code)
     print("   ├─ 1. 獲取真實經濟數據 (Finviz)...")
     economic_events = get_economic_events()
     earnings_calendar = get_earnings_calendar()
     
-    # Combine hard facts
     hard_facts_parts = []
     if economic_events and "無" not in economic_events:
         hard_facts_parts.append(f"經濟數據:\n{economic_events}")
@@ -46,10 +44,9 @@ def run_analysis(mode="post_market", dry_run=False):
     
     events_str = "\n\n".join(hard_facts_parts) if hard_facts_parts else "本週無重大財經事件。"
     
-    # Step B: Get AI Opinion (LLM)
     print("   ├─ 2. 請求 AI 策略解讀...")
     news_agent = NewsAgent()
-    searcher = GoogleNewsSearcher()  # Initialize factual news searcher
+    searcher = GoogleNewsSearcher()
     
     try:
         ai_analysis = news_agent.get_market_outlook(events_data=events_str)
@@ -57,24 +54,8 @@ def run_analysis(mode="post_market", dry_run=False):
         print(f"   ⚠️ AI 市場解讀失敗: {e}")
         ai_analysis = "市場解讀暫時無法取得"
     
-    # Combine for Report
-    market_outlook_section = f"""📅 **本週重要財經事件 (Hard Facts)**:
-{events_str}
-
-🧠 **AI 策略解讀 (Opinion)**:
-{ai_analysis}""".strip()
-    
-    # 1. Prepare Report Header
-    title_suffix = "盤前分析" if mode == "pre_market" else "盤後日報"
-    if not market_is_open: title_suffix += " (休市)"
-    
-    report_content = f"⚠️ 程式還在修改中，看看就好 ⚠️\n🤖 【AI 投資{title_suffix} - GARP V2.1】 🤖\n"
-    if not market_is_open:
-        report_content += "😴 美股今日休市，提供市場前瞻。\n"
-        
-    report_content += f"📊 市場: VIX {market_regime['vix']:.2f} | SPY {'🔥多頭' if market_regime['is_bullish'] else '❄️空頭'}\n"
-    report_content += f"{market_outlook_section}\n"
-    report_content += "=" * 40 + "\n"
+    # [Start] Collection for Batch Reporting
+    all_analyzed_cards = [] 
     
     # 2. Analyze Stocks (Only if market is open)
     if market_is_open:
@@ -94,27 +75,28 @@ def run_analysis(mode="post_market", dry_run=False):
             else:
                 print("⚠️  [Main] Running without database storage.")
             
-            # Analyze Holdings
-            if MY_HOLDINGS:
-                report_content += "\n💼 【我的持股監控】\n"
-                for symbol in MY_HOLDINGS:
+            # Helper function to process a list of symbols
+            def process_list(symbol_list, list_name):
+                if not symbol_list: return
+                print(f"\n💼【{list_name}】")
+                
+                for symbol in symbol_list:
                     try:
-                        print(f"\n🔍 分析持股: {symbol}")
+                        print(f"\n🔍 分析: {symbol}")
                         
                         # A. GARP Analysis
                         card = strategy.analyze(symbol)
                         print(f"   ├─ 評級: {card.overall_status}")
                         
                         news_summary_str = None
+                        should_analyze_depth = True
                         
-                        # Only spend API credits on stocks that are NOT REJECT scenarios
-                        # OR if it's already in our holdings (we care about our money)
-                        should_analyze_depth = True 
-                        
+                        # Optimization: Skip API calls for Watchlist rejects
+                        if list_name == "Watchlist" and card.overall_status == OverallStatus.REJECT.value:
+                            should_analyze_depth = False
+                            
                         if should_analyze_depth:
-                            # B. Prediction Engine (New!)
-                            # Check if card passed basic filters or if checking for specific reasons
-                            # For holding, we always check prediction if possible
+                            # B. Prediction Engine
                             print(f"   ├─ 執行價格預測 (Monte Carlo)...")
                             try:
                                 prediction = get_predicted_return(symbol)
@@ -128,7 +110,7 @@ def run_analysis(mode="post_market", dry_run=False):
                             except Exception as pe:
                                 print(f"      ⚠️ 預測引擎錯誤: {pe}")
                             
-                            # C. Google News & AI Commentary (New!)
+                            # C. Google News & AI Commentary
                             print(f"   ├─ 搜尋新聞 (Google Facts)...")
                             try:
                                 news_list = searcher.search_news(symbol, days=3)
@@ -138,144 +120,66 @@ def run_analysis(mode="post_market", dry_run=False):
                                     analysis_result = news_agent.analyze_news(symbol, news_list)
                                     
                                     if analysis_result:
-                                        # Construct readable summary for the report
-                                        sentiment_emoji = "😃" if analysis_result['sentiment'] == "Positive" else ("😞" if analysis_result['sentiment'] == "Negative" else "😐")
-                                        
-                                        # Format headlines
-                                        headlines = searcher.format_news_summary(news_list, max_articles=2)
-                                        
-                                        news_summary_str = f"""💡 AI 觀點: {sentiment_emoji} {analysis_result['sentiment']} / {analysis_result['prediction']}
-💬 分析: {analysis_result['summary_reason']}
-{headlines}"""
-                                    else:
-                                        news_summary_str = searcher.format_news_summary(news_list, max_articles=3)
-                                else:
-                                    print("      ⚠️ 無近期新聞")
-                                    news_summary_str = "📰 近 3 日無重大新聞"
-                            except Exception as ne:
-                                print(f"      ⚠️ 新聞模組錯誤: {ne}")
-                                news_summary_str = "⚠️ 無法取得新聞"
-                        
-                        # Format report
-                        report = format_stock_report(card, news_summary_str)
-                        
-                        # Database: Save snapshot
-                        db.save_daily_snapshot(card, report)
-                        status_change = db.get_status_change(symbol, card.overall_status)
-                        
-                        # Add status change indicator
-                        status_indicator = ""
-                        if status_change == "UPGRADE":
-                            status_indicator = " [🚀 評級調升!]"
-                        elif status_change == "DOWNGRADE":
-                            status_indicator = " [⚠️ 評級調降]"
-                        elif status_change == "NEW":
-                            status_indicator = " [🆕 新增追蹤]"
-                        
-                        # Add cost info
-                        my_cost = MY_COSTS.get(symbol, 0)
-                        if my_cost > 0: 
-                            # ROI Calculation
-                            roi = ((card.price - my_cost) / my_cost) * 100
-                            roi_emoji = "🔥" if roi > 0 else "💸"
-                            report += f"\n💰 成本: ${my_cost} | 損益: {roi_emoji} {roi:+.2f}%"
-                        
-                        report_content += f"{report}{status_indicator}\n" + "-" * 40 + "\n"
-                        print(f"   └─ ✅ 完成")
-                        time.sleep(1) # Be nice to APIs
-                        
-                    except Exception as e:
-                        print(f"   └─ ❌ 錯誤: {e}")
-                        import traceback
-                        traceback.print_exc()
-                        report_content += f"⚠️ {symbol}: 分析失敗 ({e})\n" + "-" * 40 + "\n"
-            
-            # Analyze Watchlist (Similar logic)
-            if MY_WATCHLIST:
-                report_content += "\n👀 【重點關注】\n"
-                for symbol in MY_WATCHLIST:
-                    if symbol in MY_HOLDINGS: continue
-                    try:
-                        print(f"\n🔍 分析觀察股: {symbol}")
-                        
-                        # A. GARP Analysis
-                        card = strategy.analyze(symbol)
-                        print(f"   ├─ 評級: {card.overall_status}")
-                        
-                        news_summary_str = None
-                        
-                        # Logic: Analyze depth only if it's NOT a straight REJECT
-                        # This saves API costs and time
-                        if card.overall_status != OverallStatus.REJECT.value:
-                            
-                            # B. Prediction Engine
-                            print(f"   ├─ 執行價格預測...")
-                            try:
-                                prediction = get_predicted_return(symbol)
-                                if prediction:
-                                    card.predicted_return_1w = prediction.get('predicted_return_1w')
-                                    card.confidence_score = prediction.get('confidence_score')
-                            except Exception as pe:
-                                print(f"      ⚠️ 預測引擎錯誤: {pe}")
-                            
-                            # C. Google News
-                            print(f"   ├─ 搜尋新聞...")
-                            try:
-                                news_list = searcher.search_news(symbol, days=3)
-                                
-                                if news_list:
-                                    # For watchlist, max 2 articles, simpler analysis
-                                    analysis_result = news_agent.analyze_news(symbol, news_list)
-                                    if analysis_result:
                                         sentiment_emoji = "😃" if analysis_result['sentiment'] == "Positive" else ("😞" if analysis_result['sentiment'] == "Negative" else "😐")
                                         headlines = searcher.format_news_summary(news_list, max_articles=2)
                                         news_summary_str = f"💡 AI: {sentiment_emoji} {analysis_result['sentiment']}\n💬 {analysis_result['summary_reason']}\n{headlines}"
                                     else:
                                         news_summary_str = searcher.format_news_summary(news_list, max_articles=2)
                                 else:
+                                    print("      ⚠️ 無近期新聞")
                                     news_summary_str = "📰 近期無新聞"
                             except Exception as ne:
                                 print(f"      ⚠️ 新聞模組錯誤: {ne}")
+                                news_summary_str = "⚠️ 無法取得新聞"
                         else:
                             print(f"   ├─ 評級為 REJECT，跳過深度分析")
                             news_summary_str = "⛔ 基本面未達標，暫不進行 AI 新聞分析。"
                         
-                        # Format report
-                        report = format_stock_report(card, news_summary_str)
+                        # Attach summary to card for format_minimal_report
+                        card.news_summary_str = news_summary_str
                         
-                        # Database
-                        db.save_daily_snapshot(card, report)
-                        status_change = db.get_status_change(symbol, card.overall_status)
+                        # Add to batch list
+                        all_analyzed_cards.append(card)
                         
-                        status_indicator = ""
-                        if status_change == "UPGRADE": status_indicator = " [🚀 評級調升!]"
-                        elif status_change == "DOWNGRADE": status_indicator = " [⚠️ 評級調降]"
+                        # Database: Save snapshot (Detailed Report)
+                        report_detailed = format_stock_report(card, news_summary_str)
+                        db.save_daily_snapshot(card, report_detailed)
+                        print(f"   └─ ✅ 完成 (DB Saved)")
                         
-                        report_content += f"{report}{status_indicator}\n" + "-" * 40 + "\n"
-                        print(f"   └─ ✅ 完成")
-                        time.sleep(1)
+                        time.sleep(1) # Rate limiting
                         
                     except Exception as e:
                         print(f"   └─ ❌ 錯誤: {e}")
-                        report_content += f"⚠️ {symbol}: 分析失敗\n" + "-" * 40 + "\n"
-    else:
-        report_content += "\n🏖️ 休市期間不進行個股分析。\n"
+                        import traceback
+                        traceback.print_exc()
+
+            # Process Lists
+            if MY_HOLDINGS: process_list(MY_HOLDINGS, "Holdings")
+            if MY_WATCHLIST: process_list(MY_WATCHLIST, "Watchlist")
+
+    # 3. Generate Final Report (Minimal Version)
+    print("\n📝 生成最終簡報 (Minimal Mode)...")
+    minimal_report_content = format_minimal_report(market_regime, all_analyzed_cards)
     
-    # 3. Send Report
+    # 4. Send Report
     if dry_run:
         print("\n" + "=" * 60)
         print("📢 [Dry Run] 模擬發送報告內容：")
         print("=" * 60)
-        print(report_content)
+        print(minimal_report_content)
         print("=" * 60)
     else:
         print("\n📨 正在發送報告...")
+        
+        # Telegram
         if Config['TG_TOKEN']:
             print("   ├─ Telegram")
-            send_telegram(report_content, Config['TG_TOKEN'], Config['TG_CHAT_ID'])
+            send_telegram(minimal_report_content, Config['TG_TOKEN'], Config['TG_CHAT_ID'])
+            
+        # LINE
         if Config['LINE_TOKEN']:
             print("   └─ LINE")
-            send_line(report_content, Config['LINE_TOKEN'], user_id=Config['LINE_USER_ID'], group_id=Config.get('LINE_GROUP_ID'))
+            send_line(minimal_report_content, Config['LINE_TOKEN'], user_id=Config['LINE_USER_ID'], group_id=Config.get('LINE_GROUP_ID'))
     
     print("\n✅ 完成！")
 
