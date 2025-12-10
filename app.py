@@ -58,6 +58,7 @@ CUSTOM_CSS = r"""
     .badge-pass { background-color: rgba(6, 95, 70, 0.2); color: #10b981; border: 1px solid #10b981; }
     .badge-watch { background-color: rgba(146, 64, 14, 0.2); color: #f59e0b; border: 1px solid #f59e0b; }
     .badge-reject { background-color: rgba(153, 27, 27, 0.2); color: #ef4444; border: 1px solid #ef4444; }
+    .badge-unknown { background-color: rgba(107, 114, 128, 0.2); color: #6b7280; border: 1px solid #6b7280; } /* Gray */
     
     .badge-tag { background-color: var(--secondary-background-color); color: var(--text-color); border: 1px solid var(--primary-color); opacity: 0.8; }
     
@@ -358,7 +359,7 @@ def main():
             else:
                 # [Fix] Default style for UNKNOWN
                 border_color = "#9ca3af" # Gray
-                badge_class = "badge-watch" 
+                badge_class = "badge-unknown" # Correct gray badge 
             
             # Card HTML Header
             st.markdown(f"""
