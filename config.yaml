@@ -13,8 +13,8 @@ position_limits:
 
 market:
   benchmark: "VOO"
-  etf_watch_list: ["VOO", "QQQ", "SMH"]
-  public_showcase_list: ["NVTS", "PLTR"]
+  etf_watch_list: ["VOO", "QQQ", "SMH", "VXUS"]
+  public_showcase_list: ["NVTS", "PLTR", "NVDA", "TSLA", "GOOG"]
 
 strategy:
   core:
