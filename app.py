@@ -402,7 +402,7 @@ def main():
                     
             # Sparkline
             if len(sparkline) > 1:
-                st.caption("7日走勢")
+                st.caption("14日走勢 (2週)")
                 st.line_chart(pd.DataFrame(sparkline[::-1], columns=['Price']), height=50, use_container_width=True)
 
             # [Feature] Tabs for detailed view

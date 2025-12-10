@@ -163,8 +163,8 @@ def fetch_and_analyze(symbol):
         # Dual momentum
         dual_momentum_data = calculate_dual_momentum(symbol)
         
-        # Sparkline Data (Last 7 Days)
-        sparkline_data = close.tail(7).tolist() if len(close) >= 7 else close.tolist()
+        # Sparkline Data (Last 14 Days - 2 Weeks)
+        sparkline_data = close.tail(14).tolist() if len(close) >= 14 else close.tolist()
         
         return {
             "symbol": symbol,
