@@ -17,6 +17,7 @@ class StockHealthCard:
     symbol: str
     price: float
     strategy_type: str = "GARP"
+    sparkline: List[float] = field(default_factory=list) # [New] Persist sparkline data
     
     # Solvency Check: Contains debt_to_equity, current_ratio, is_passing (bool), tags (list of strings)
     solvency_check: Dict = field(default_factory=lambda: {

@@ -75,7 +75,12 @@ class GARPStrategy:
             return self._create_empty_card(symbol)
 
         # Initialize Card
-        card = StockHealthCard(symbol=symbol, price=price, strategy_type=self.strategy_type)
+        card = StockHealthCard(
+            symbol=symbol, 
+            price=price, 
+            strategy_type=self.strategy_type,
+            sparkline=market_data.get('sparkline', []) # [New]
+        )
 
         # 2. Solvency Check
         self._check_solvency(card, info)
