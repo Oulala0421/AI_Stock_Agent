@@ -163,8 +163,14 @@ def fetch_and_analyze(symbol):
         # Dual momentum
         dual_momentum_data = calculate_dual_momentum(symbol)
         
+        # Sparkline Data (Last 7 Days)
+        sparkline_data = close.tail(7).tolist() if len(close) >= 7 else close.tolist()
+        
         return {
             "symbol": symbol,
+            "longName": ticker.info.get('longName', symbol), # Metadata Enrichment
+            "sector": ticker.info.get('sector', 'Unknown'),
+            "sparkline": sparkline_data, # For Dashboard
             "price": latest['Close'],
             "is_etf": is_etf,
             "trend": {

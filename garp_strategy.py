@@ -43,8 +43,31 @@ class GARPStrategy:
             market_data = fetch_and_analyze(symbol)
             
             if not market_data:
-                logger.warning(f"⚠️ No market data found for {symbol}")
-                return self._create_empty_card(symbol)
+                logger.warning(f"⚠️ No market data found for {symbol}, checking cache...")
+                # Fallback: Check Database for cached snapshot
+                db = DatabaseManager()
+                cached = db.get_latest_stock_data(symbol)
+                
+                if cached and 'raw_data' in cached:
+                    logger.info(f"✅ Loaded cached data for {symbol}")
+                    # Reconstruct Card from Cache
+                    raw = cached['raw_data']
+                    card = StockHealthCard(
+                        symbol=raw.get('symbol', symbol),
+                        price=raw.get('price', 0.0),
+                        strategy_type=self.strategy_type
+                    )
+                    # Manually populate distinct checks from raw dict
+                    # This is a simplified reconstruction for display purposes
+                    card.overall_status = raw.get('overall_status', 'UNKNOWN')
+                    card.overall_reason = f"Cached Data (Last Updated: {cached.get('date')})"
+                    
+                    # Populate tags list from raw data if available, else mark as cached
+                    card.advanced_metrics['tags'].append(f"⚠️ Offline Mode (Cached: {cached.get('date')})")
+                    
+                    return card
+                else:
+                    return self._create_empty_card(symbol)
                 
             price = market_data.get('price', 0.0)
         except Exception as e:
