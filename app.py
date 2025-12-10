@@ -302,14 +302,15 @@ def main():
             continue
         
         # [Fix] Changed to inclusive filter logic
-        s_status = s.get('overall_status', 'UNKNOWN')
+        # [Fix] Handle Schema Mismatch (DB uses 'status', App used 'overall_status')
+        s_status = s.get('status') or s.get('overall_status') or 'UNKNOWN'
         if s_status not in selected_statuses:
             continue
             
         filtered_stocks.append(s)
     
     # Count
-    pass_count = len([s for s in filtered_stocks if s.get('overall_status') == 'PASS'])
+    pass_count = len([s for s in filtered_stocks if (s.get('status') == 'PASS' or s.get('overall_status') == 'PASS')])
     with c4:
         st.markdown(f"""
         <div class="kpi-card">
@@ -331,7 +332,7 @@ def main():
             # Data extraction
             symbol = stock.get('symbol')
             price = stock.get('price', 0)
-            status = stock.get('overall_status', 'UNKNOWN')
+            status = stock.get('status') or stock.get('overall_status') or 'UNKNOWN'
             
             # [Fix] Handle nested raw_data from MongoDB
             raw_data = stock.get('raw_data', {})
