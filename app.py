@@ -159,30 +159,28 @@ def get_market_data():
 @st.cache_data(ttl=300)
 def get_data_with_history(limit=50):
     """
-    Fetch stocks with 7-day price history array (Cached)
+    Fetch stocks with pre-computed sparkline (Cached)
     """
     client = init_mongo_connection()
     if not client: return []
     
     db = client['stock_agent']
+    
+    # New Logic: Just get the latest snapshot for each symbol
+    # We rely on 'update_daily.py' or 'fetch_and_analyze' to store the 'sparkline' array directly.
+    # To get distinct latest documents efficiently:
     pipeline = [
-        {"$sort": {"date": -1, "created_at": -1}}, # Ensure latest date first
+        {"$sort": {"date": -1, "updated_at": -1}}, # Ensure latest date first
         {
             "$group": {
                 "_id": "$symbol",
-                "latest": {"$first": "$$ROOT"},
-                "prices": {"$push": "$price"}
+                "doc": {"$first": "$$ROOT"}
             }
         },
-        {
-            "$project": {
-                "latest": 1,
-                "sparkline": {"$slice": ["$prices", 7]}
-            }
-        },
-        {"$replaceRoot": {"newRoot": {"$mergeObjects": ["$latest", {"sparkline": "$sparkline"}]}}},
-        {"$sort": {"overall_status": 1}},
+        {"$replaceRoot": {"newRoot": "$doc"}},
+        {"$sort": {"status": 1}} # Optional sort
     ]
+    
     # Convert cursor to list for caching
     return list(db['daily_snapshots'].aggregate(pipeline))
 
