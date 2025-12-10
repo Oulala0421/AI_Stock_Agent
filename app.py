@@ -104,7 +104,7 @@ CUSTOM_CSS = r"""
     /* Hide Streamlit elements */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    header {visibility: hidden;}
+    /* header {visibility: hidden;}  <-- Removed to keep Sidebar Toggle visible */
     
 </style>
 """
