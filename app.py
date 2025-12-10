@@ -218,10 +218,11 @@ def main():
     st.sidebar.header("🔍 篩選")
     search_query = st.sidebar.text_input("搜尋代號", placeholder="e.g. NVDA").upper()
     
-    status_filter = st.sidebar.multiselect(
-        "不顯示狀態",
-        options=["PASS", "WATCHLIST", "REJECT"],
-        default=["REJECT"] # Default hide rejects to keep it clean
+    all_statuses = ["PASS", "WATCHLIST", "REJECT", "UNKNOWN"]
+    selected_statuses = st.sidebar.multiselect(
+        "顯示狀態",
+        options=all_statuses,
+        default=["PASS", "WATCHLIST"] # Default show good ones
     )
     
     if st.sidebar.button("🔄 刷新數據", type="primary"):
@@ -300,8 +301,12 @@ def main():
     for s in raw_stocks:
         if search_query and search_query not in s.get('symbol', ''):
             continue
-        if s.get('overall_status') in status_filter:
+        
+        # [Fix] Changed to inclusive filter logic
+        s_status = s.get('overall_status', 'UNKNOWN')
+        if s_status not in selected_statuses:
             continue
+            
         filtered_stocks.append(s)
     
     # Count
@@ -347,9 +352,13 @@ def main():
             elif status == 'WATCHLIST':
                 border_color = "#f59e0b" # Amber
                 badge_class = "badge-watch"
-            else:
+            elif status == 'REJECT':
                 border_color = "#ef4444" # Red
                 badge_class = "badge-reject"
+            else:
+                # [Fix] Default style for UNKNOWN
+                border_color = "#9ca3af" # Gray
+                badge_class = "badge-watch" 
             
             # Card HTML Header
             st.markdown(f"""
@@ -359,7 +368,10 @@ def main():
                         <div style="font-size: 1.25rem; font-weight: 700;">{symbol}</div>
                         <span class="badge {badge_class}">{status}</span>
                     </div>
-                    <div class="price-large">${price:.2f}</div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 0.75rem; color: #6b7280;">現價 (Price)</div>
+                        <div class="price-large">${price:.2f}</div>
+                    </div>
                 </div>
                 <div class="card-body">
             """, unsafe_allow_html=True)
@@ -447,8 +459,10 @@ def main():
                     st.info("尚無 DCF 數據 (可能是負現金流或資料不足)")
                     
                 st.markdown("---")
-                st.markdown(f"**分析師目標均價**: ${vc.get('fair_value', 0):.2f}")
-                st.markdown(f"**PEG Ratio**: {vc.get('peg_ratio', 'N/A')}")
+                fair_val = vc.get('fair_value')
+                st.markdown(f"**分析師目標均價**: ${fair_val:.2f}" if fair_val is not None else "**分析師目標均價**: N/A")
+                peg = vc.get('peg_ratio')
+                st.markdown(f"**PEG Ratio**: {peg:.2f}" if peg is not None else "**PEG Ratio**: N/A")
             
             with tab_fund:
                 # Extract Fundamental Data
