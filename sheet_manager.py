@@ -79,6 +79,42 @@ def get_stock_lists():
         print(f"❌ 讀取試算表失敗: {e}")
         return [], [], {}, {}
 
+def get_my_portfolio():
+    """
+    Get detailed portfolio for Risk Management (Personalization Phase)
+    Reads 'My_Real_Portfolio' tab.
+    Expected Columns: Symbol, Shares, Avg_Cost, Sector
+    """
+    client = get_google_sheet_client()
+    if not client: return []
+
+    try:
+        sheet = client.open("My_Stock_Database")
+        try:
+            ws = sheet.worksheet("My_Real_Portfolio")
+        except gspread.WorksheetNotFound:
+            print("⚠️ 'My_Real_Portfolio' sheet not found. Skipping personalization.")
+            return []
+            
+        data = ws.get_all_records()
+        portfolio = []
+        
+        for row in data:
+            symbol = row.get('Symbol')
+            if symbol:
+                portfolio.append({
+                    'symbol': symbol.upper().strip(),
+                    'shares': float(row.get('Shares', 0) or 0),
+                    'avg_cost': float(row.get('Avg_Cost', 0) or 0),
+                    'sector': row.get('Sector', 'Unknown')
+                })
+        
+        return portfolio
+        
+    except Exception as e:
+        print(f"⚠️ Failed to read My_Real_Portfolio: {e}")
+        return []
+
 def log_history(data_list):
     """
     將每日分析結果寫入 History 分頁

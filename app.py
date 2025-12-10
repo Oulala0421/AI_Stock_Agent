@@ -234,6 +234,20 @@ def main():
     mkt = get_market_data()
     c1, c2, c3 = st.columns(3)
     
+    # 1. Market KPIs
+    mkt = get_market_data()
+    
+    # Calculate Proxy Z-Score from VIX if not available from DB
+    # Normal VIX ~15-20. Low < 12 (Greed), High > 25 (Fear). 
+    # Approx Z = (Current - 18) / 5 (Rough proxy)
+    if 'z_score' not in mkt:
+         mkt['z_score'] = (mkt['vix'] - 18) / 6.0
+         mkt['z_source'] = "VIX Proxy"
+    
+    z_score = mkt['z_score']
+    
+    c1, c2, c3, c4 = st.columns(4)
+    
     with c1:
         color = "green" if mkt['spy_chg'] >= 0 else "red"
         st.markdown(f"""
@@ -254,6 +268,30 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
+    with c3:
+        # Sentiment Gauge
+        # Z > 1 Greed (Red/Orange?), Z < -1 Fear (Green? "Buy fear")
+        # Warren Buffett: "Fearful when others are greedy"
+        # High Z-Score (Greedy) -> Red Warning
+        # Low Z-Score (Fear) -> Green Opportunity
+        
+        sent_color = "#3b82f6" # Neutral Blue
+        sent_text = "Neutral"
+        if z_score > 1.0:
+            sent_color = "#ef4444" # Red (Danger)
+            sent_text = "Extreme Greed"
+        elif z_score < -1.0:
+             sent_color = "#10b981" # Green (Opportunity)
+             sent_text = "Extreme Fear"
+        
+        st.markdown(f"""
+        <div class="kpi-card">
+            <div class="kpi-label">市場情緒 (Z-Score)</div>
+            <div class="kpi-value" style="color: {sent_color};">{z_score:+.2f}</div>
+            <div class="kpi-label">{sent_text}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
     # 2. Stock Grid
     raw_stocks = get_data_with_history()
     
@@ -268,7 +306,7 @@ def main():
     
     # Count
     pass_count = len([s for s in filtered_stocks if s.get('overall_status') == 'PASS'])
-    with c3:
+    with c4:
         st.markdown(f"""
         <div class="kpi-card">
             <div class="kpi-label">篩選後監控</div>
@@ -276,6 +314,9 @@ def main():
             <div style="color: #10b981; font-weight: 600;">🟢 {pass_count} 檔強勢</div>
         </div>
         """, unsafe_allow_html=True)
+    
+    # Private Mode Toggle (Sidebar)
+    show_private = st.sidebar.checkbox("🕵️‍♂️ 顯示私人風控警示", value=False)
 
     st.markdown("### 📋 監控清單")
     
@@ -303,15 +344,12 @@ def main():
             if status == 'PASS':
                 border_color = "#10b981" # Green
                 badge_class = "badge-pass"
-                chart_color = "green"
             elif status == 'WATCHLIST':
                 border_color = "#f59e0b" # Amber
                 badge_class = "badge-watch"
-                chart_color = "orange"
             else:
                 border_color = "#ef4444" # Red
                 badge_class = "badge-reject"
-                chart_color = "red"
             
             # Card HTML Header
             st.markdown(f"""
@@ -325,6 +363,17 @@ def main():
                 </div>
                 <div class="card-body">
             """, unsafe_allow_html=True)
+
+            # === Private Risk Alerts ===
+            if show_private:
+                # Private notes are often lists of strings
+                p_notes = stock.get('private_notes', []) 
+                if not p_notes and 'private_notes' in raw_data:
+                    p_notes = raw_data['private_notes']
+                
+                if p_notes:
+                    for note in p_notes:
+                        st.error(f"🕵️‍♂️ {note}", icon="⚠️")
             
             # Prediction Row
             c_a, c_b = st.columns(2)
@@ -344,14 +393,13 @@ def main():
                 st.line_chart(pd.DataFrame(sparkline[::-1], columns=['Price']), height=50, use_container_width=True)
 
             # [Feature] Tabs for detailed view
-            tab_ai, tab_fund, tab_tech, tab_news = st.expander(f"💡 AI 分析與詳細數據", expanded=False).tabs(["🧠 AI 分析", "📊 基本面數據", "📉 技術指標", "📰 新聞消息"])
+            tab_ai, tab_val, tab_fund, tab_tech, tab_news = st.expander(f"💡 AI 分析與詳細數據", expanded=False).tabs(["🧠 AI", "💎 估值(DCF)", "📊 基本面", "📉 技術", "📰 新聞"])
             
             # Pre-fetch news summary
             news_summary = stock.get('news_summary_str')
 
             with tab_ai:
                 full_report = stock.get('report', '尚無分析報告')
-                # Clean report: Remove the News Section if present to avoid duplication
                 if "📰 MARKET INTELLIGENCE:" in full_report:
                     clean_report = full_report.split("📰 MARKET INTELLIGENCE:")[0].strip()
                 else:
@@ -359,13 +407,55 @@ def main():
                 
                 st.markdown(clean_report)
             
+            with tab_val:
+                # === Deep Value Tab ===
+                vc = raw_data.get('valuation_check', {})
+                dcf_data = vc.get('dcf', {})
+                
+                intrinsic = dcf_data.get('intrinsic_value')
+                mos = vc.get('margin_of_safety_dcf')
+                
+                st.caption("Sentiment-Adjusted DCF Model")
+                
+                if intrinsic:
+                    col_v1, col_v2 = st.columns(2)
+                    with col_v1:
+                        st.metric("AI 內在價值", f"${intrinsic:.2f}")
+                        st.metric("折現率 (Adj)", f"{dcf_data.get('discount_rate', 0):.1%}")
+                    
+                    with col_v2:
+                        mos_color = "normal"
+                        if mos and mos > 0.15: mos_color = "off" # Streamlit doesn't really have green metric color easily without delta
+                        st.metric("安全邊際 (MoS)", f"{mos:+.1%}", delta_color="normal" if (mos and mos > 0) else "inverse")
+                        st.metric("情緒罰分", f"{dcf_data.get('sentiment_penalty', 0):.1%}")
+
+                    # Visual Comparison
+                    # Simple Progress bar to show Price relative to Intrinsic
+                    # 0% .... Price .... Intrinsic (if undervalued)
+                    st.write("---")
+                    st.caption("價格 vs 價值")
+                    
+                    if mos > 0:
+                        st.success(f"低估 {mos:.1%}")
+                        st.progress(min(1.0, price / intrinsic))
+                    else:
+                        st.warning(f"溢價 {-mos:.1%}")
+                        # Inverted progress is hard, just show full
+                        st.progress(1.0)
+                        
+                else:
+                    st.info("尚無 DCF 數據 (可能是負現金流或資料不足)")
+                    
+                st.markdown("---")
+                st.markdown(f"**分析師目標均價**: ${vc.get('fair_value', 0):.2f}")
+                st.markdown(f"**PEG Ratio**: {vc.get('peg_ratio', 'N/A')}")
+            
             with tab_fund:
                 # Extract Fundamental Data
                 solvency = raw_data.get('solvency_check', {})
                 quality = raw_data.get('quality_check', {})
-                valuation = raw_data.get('valuation_check', {})
                 
-                f1, f2, f3 = st.columns(3)
+                f1, f2 = st.columns(2)
                 with f1:
                     st.markdown("**💰 償債能力**")
                     debt_eq = solvency.get('debt_to_equity')
@@ -380,17 +470,10 @@ def main():
                     st.markdown(f"- ROE: :{r_color}[{roe:.1%}]" if roe else "- ROE: N/A")
                     st.markdown(f"- 毛利率: {quality.get('gross_margin', 'N/A')}")
                     
-                with f3:
-                    st.markdown("**🏷️ 估值**")
-                    pe = valuation.get('pe_ratio')
-                    peg = valuation.get('peg_ratio')
-                    st.markdown(f"- P/E: {pe:.1f}" if pe else "- P/E: N/A")
-                    st.markdown(f"- PEG: {peg:.2f}" if peg else "- PEG: N/A")
-
             with tab_tech:
                 # Extract Technical Data
                 technical = raw_data.get('technical_setup', {})
-                volatility = raw_data.get('volatility', {})  # Assuming volatility is stored similarly if available
+                volatility = raw_data.get('volatility', {})  
                 
                 t1, t2 = st.columns(2)
                 with t1:
@@ -403,8 +486,11 @@ def main():
                 
                 with t2:
                     st.markdown("**🌊 波動率**")
-                    atr = volatility.get('atr') # Check if strategy saves this, otherwise careful
-                    st.markdown(f"- ATR: {atr:.2f}" if atr else "- ATR: N/A")
+                    # Assuming ATR or Risk Range logic
+                    mc_min = stock.get('monte_carlo_min')
+                    mc_max = stock.get('monte_carlo_max')
+                    if mc_min:
+                        st.markdown(f"- 1W Range: ${mc_min:.1f} - ${mc_max:.1f}")
                     
                 # Tags
                 st.markdown("---")
@@ -422,22 +508,12 @@ def main():
                 else:
                     st.write("暫無新聞分析")
                 
-                # Tech Tags
-                # Try to get tags from raw dictionary if available, relying on flat structure??
-                # Wait, database manager flattens it? 
-                # StockHealthCard stores checks as DICTS in MongoDB.
-                # E.g. solvency_check: {tags: [...]}
-                
-                solvency = stock.get('solvency_check', {})
-                quality = stock.get('quality_check', {})
-                val = stock.get('valuation_check', {})
-                
-                all_tags = (solvency.get('tags', []) + 
-                           quality.get('tags', []) + 
-                           val.get('tags', []))
-                
-                if all_tags:
-                    st.markdown(" ".join([f"`{t}`" for t in all_tags]))
+                # Check for News Agent Analysis
+                news_analysis = raw_data.get('advanced_metrics', {}).get('news_analysis', {})
+                if news_analysis:
+                    score = news_analysis.get('score') # Might vary by version
+                    if not score: score = news_analysis.get('sentiment_score')
+                    st.metric("新聞情緒分數", f"{score}/100" if score else "N/A")
 
             st.markdown("</div></div>", unsafe_allow_html=True)
 

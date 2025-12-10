@@ -66,37 +66,39 @@ def run_monte_carlo_simulation(portfolio_value, daily_returns, num_simulations=1
     final_values = price_paths[-1]
     
     # Calculate VaR (Value at Risk)
-    # 95% VaR = 5th percentile
+    # 95% VaR = 5th percentile price
     percentile_5 = xp.percentile(final_values, 5)
-    var_95 = portfolio_value - percentile_5
+    percentile_95 = xp.percentile(final_values, 95)
     
-    # Calculate metrics
-    mean_final = xp.mean(final_values)
-    median_final = xp.median(final_values)
-    max_final = xp.max(final_values)
-    min_final = xp.min(final_values)
+    var_95_value = portfolio_value - percentile_5
     
     # Transfer back to CPU if needed
     if HAS_GPU:
         final_values = cp.asnumpy(final_values)
-        var_95 = float(var_95)
-        mean_final = float(mean_final)
-        median_final = float(median_final)
-        max_final = float(max_final)
-        min_final = float(min_final)
+        percentile_5 = float(percentile_5)
+        percentile_95 = float(percentile_95)
+        var_95_value = float(var_95_value)
         
     end_time = time.time()
     print(f"✅ 模擬完成 (耗時: {end_time - start_time:.2f} 秒)")
     
+    # Financial Logic Correction:
+    # Removed "Predicited" Mean/Median/Max/Min
+    # Added "Volatility Range" (5th-95th percentile)
+    
     results = {
         "Current_Value": portfolio_value,
-        "Mean_Final_Value": mean_final,
-        "Median_Final_Value": median_final,
-        "Max_Final_Value": max_final,
-        "Min_Final_Value": min_final,
-        "VaR_95": var_95,
-        "VaR_95_Percent": var_95 / portfolio_value,
-        "Bankruptcy_Risk": np.sum(final_values < portfolio_value * 0.5) / num_simulations # Prob of losing 50%
+        # Risk Metrics
+        "VaR_95": var_95_value,
+        "risk_downside_5pct": var_95_value / portfolio_value, # Percentage loss
+        
+        # Volatility Range (Price)
+        "volatility_range_low": percentile_5,
+        "volatility_range_high": percentile_95,
+        
+        # Removed Prediction Keys (Mean_Final_Value, etc.)
+        # but keeping 'var_95' lowercase alias if needed by legacy
+        "var_95": var_95_value 
     }
     
     return results

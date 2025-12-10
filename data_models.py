@@ -65,6 +65,9 @@ class StockHealthCard:
         "tags": []
     })
     
+    # Private Personalization Notes (e.g., Concentration Warning)
+    private_notes: List[str] = field(default_factory=list)
+    
     # === Price Prediction Fields (Sprint 1 Extension) ===
     # AI-driven price forecasting and Monte Carlo simulation results
     predicted_return_1w: Optional[float] = None  # 1-week predicted return (%)

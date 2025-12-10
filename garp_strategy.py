@@ -4,9 +4,10 @@ from market_data import fetch_and_analyze
 from config import Config
 from logger import logger
 from advanced_metrics import AdvancedFinancials
-from prediction_engine import get_predicted_return
-from google_news_searcher import GoogleNewsSearcher
 from news_agent import NewsAgent
+from database_manager import DatabaseManager
+from stress_test.monte_carlo import run_monte_carlo_simulation
+from google_news_searcher import GoogleNewsSearcher
 
 class GARPStrategy:
     def __init__(self):
@@ -78,68 +79,90 @@ class GARPStrategy:
         except Exception as e:
             logger.error(f"News Analysis failed for {symbol}: {e}")
 
-        # 5. Valuation Check (Now uses Sentiment)
-        self._check_valuation(card, info, price)
+        # Initialize AdvancedFinancials (Early)
+        try:
+            adv = AdvancedFinancials(ticker)
+        except Exception as e:
+            logger.error(f"Failed to init AdvancedFinancials for {symbol}: {e}")
+            adv = None
+
+        # 5. Valuation Check (Now uses Sentiment + DCF)
+        self._check_valuation(card, info, price, adv)
 
         # 5. Technical Setup
         self._check_technical(card, market_data)
 
         # 5.5 Advanced Metrics (Academic Standard)
+        if adv:
+            try:
+                # Piotroski F-Score
+                f_score_res = adv.calculate_piotroski_f_score()
+                card.advanced_metrics['piotroski_score'] = f_score_res.get('score')
+                if f_score_res.get('score') is not None:
+                    if f_score_res['score'] >= 7:
+                        card.advanced_metrics['tags'].append(f"🏆 High F-Score ({f_score_res['score']})")
+                    elif f_score_res['score'] <= 3:
+                         card.advanced_metrics['tags'].append(f"⚠️ Low F-Score ({f_score_res['score']})")
+                    else:
+                         card.advanced_metrics['tags'].append(f"Average F-Score ({f_score_res['score']})")
+    
+                # Altman Z-Score
+                z_score_res = adv.calculate_altman_z_score(price)
+                card.advanced_metrics['altman_z_score'] = z_score_res.get('score')
+                if z_score_res.get('score') is not None:
+                    status = z_score_res.get('status', 'Unknown')
+                    if status == 'Safe':
+                         card.advanced_metrics['tags'].append(f"🛡️ Z-Score Safe ({z_score_res['score']:.2f})")
+                    elif status == 'Distress':
+                         card.advanced_metrics['tags'].append(f"💀 Z-Score Distress ({z_score_res['score']:.2f})")
+                         card.red_flags.append(f"Bankruptcy Risk (Z-Score {z_score_res['score']:.2f})")
+                    else:
+                         card.advanced_metrics['tags'].append(f"⚖️ Z-Score Grey ({z_score_res['score']:.2f})")
+    
+                # FCF Yield
+                fcf_res = adv.calculate_fcf_yield(price)
+                card.advanced_metrics['fcf_yield'] = fcf_res.get('yield')
+                if fcf_res.get('yield') is not None:
+                    yld = fcf_res['yield']
+                    card.advanced_metrics['tags'].append(f"💰 FCF Yield: {yld:.1%}")
+    
+            except Exception as e:
+                logger.error(f"Failed to calc advanced metrics for {symbol}: {e}")
+                card.advanced_metrics['tags'].append("⚠️ Advanced Metrics Failed")
+
+        # 5.6 Quantitative Risk Analysis (Vol Range, not Prediction)
         try:
-            adv = AdvancedFinancials(ticker)
+            # We need historical returns for Monte Carlo
+            # Reuse ticker from earlier if possible, or fetch history
+            # hist = ticker.history(period="1y") # Already have ticker
+            hist = ticker.history(period="1y")
             
-            # Piotroski F-Score
-            f_score_res = adv.calculate_piotroski_f_score()
-            card.advanced_metrics['piotroski_score'] = f_score_res.get('score')
-            if f_score_res.get('score') is not None:
-                if f_score_res['score'] >= 7:
-                    card.advanced_metrics['tags'].append(f"🏆 High F-Score ({f_score_res['score']})")
-                elif f_score_res['score'] <= 3:
-                     card.advanced_metrics['tags'].append(f"⚠️ Low F-Score ({f_score_res['score']})")
-                else:
-                     card.advanced_metrics['tags'].append(f"Average F-Score ({f_score_res['score']})")
-
-            # Altman Z-Score
-            z_score_res = adv.calculate_altman_z_score(price)
-            card.advanced_metrics['altman_z_score'] = z_score_res.get('score')
-            if z_score_res.get('score') is not None:
-                status = z_score_res.get('status', 'Unknown')
-                if status == 'Safe':
-                     card.advanced_metrics['tags'].append(f"🛡️ Z-Score Safe ({z_score_res['score']:.2f})")
-                elif status == 'Distress':
-                     card.advanced_metrics['tags'].append(f"💀 Z-Score Distress ({z_score_res['score']:.2f})")
-                     card.red_flags.append(f"Bankruptcy Risk (Z-Score {z_score_res['score']:.2f})")
-                else:
-                     card.advanced_metrics['tags'].append(f"⚖️ Z-Score Grey ({z_score_res['score']:.2f})")
-
-            # FCF Yield
-            fcf_res = adv.calculate_fcf_yield(price)
-            card.advanced_metrics['fcf_yield'] = fcf_res.get('yield')
-            if fcf_res.get('yield') is not None:
-                yld = fcf_res['yield']
-                card.advanced_metrics['tags'].append(f"💰 FCF Yield: {yld:.1%}")
+            if len(hist) > 30:
+                returns = hist['Close'].pct_change().dropna()
+                
+                # Run Simulation (Using modified Monte Carlo - Financial Logic Correction)
+                # 1 Week (5 days) Risk Range
+                sim_result = run_monte_carlo_simulation(price, returns, num_simulations=5000, days=5)
+                
+                # Extract Risk Metrics
+                # New Keys from Step 3: volatility_range_low, volatility_range_high, risk_downside_5pct
+                range_low = sim_result.get('volatility_range_low', price)
+                range_high = sim_result.get('volatility_range_high', price)
+                var_pct = sim_result.get('risk_downside_5pct', 0.0)
+                
+                # Store in card (using monte_carlo_min/max fields for range)
+                card.monte_carlo_min = float(range_low)
+                card.monte_carlo_max = float(range_high)
+                
+                # Add Tags (No "Predicted Return")
+                card.advanced_metrics['tags'].append(f"📉 Risk Range (1W): ${range_low:.2f} - ${range_high:.2f}")
+                card.advanced_metrics['tags'].append(f"🛡️ 95% VaR: -{var_pct:.1%}")
+                
+            else:
+                card.advanced_metrics['tags'].append("⚪ Risk Calc: Insufficient Data")
 
         except Exception as e:
-            logger.error(f"Failed to calc advanced metrics for {symbol}: {e}")
-            card.advanced_metrics['tags'].append("⚠️ Advanced Metrics Failed")
-
-        # 5.6 Monte Carlo Simulation (Trend & Prediction)
-        try:
-            prediction = get_predicted_return(symbol)
-            if prediction:
-                card.predicted_return_1w = prediction.get('predicted_return_1w')
-                card.confidence_score = prediction.get('confidence_score')
-                
-                stats = prediction.get('simulation_stats', {})
-                card.monte_carlo_min = stats.get('var_95') 
-                
-                if card.predicted_return_1w > 0:
-                     card.advanced_metrics['tags'].append(f"📈 Predicted +{card.predicted_return_1w:.1f}% (Conf: {card.confidence_score:.0%})")
-                else:
-                     card.advanced_metrics['tags'].append(f"📉 Predicted {card.predicted_return_1w:.1f}% (Conf: {card.confidence_score:.0%})")
-
-        except Exception as e:
-             logger.error(f"Prediction failed for {symbol}: {e}")
+             logger.error(f"Risk Analysis failed for {symbol}: {e}")
 
 
 
@@ -335,22 +358,28 @@ class GARPStrategy:
             
         return 0.0
 
-    def _calculate_dynamic_peg(self, market_score: float) -> float:
+    def _calculate_dynamic_peg(self, market_z_score: float) -> float:
         """
-        Calculate Dynamic PEG Threshold based on Market Sentiment.
-        Formula: Base_PEG * (1 + Sensitivity * (Score / 100))
+        Calculate Dynamic PEG Threshold based on Market Sentiment Z-Score.
+        Formula: Base_PEG + (Sensitivity * Z_Score)
         """
-        base_peg = self.thresholds['max_peg'] # 1.5
-        sensitivity = 0.2 # +/- 20% adjustment
+        base_peg = self.thresholds['max_peg'] # 1.5, or 1.0 per new user request? User said: "base_peg = 1.0" in request example.
+        # User request said: "base_peg = 1.0"
+        # Let's check self.thresholds['max_peg']. It defaults to 1.5. 
+        # The user's example code said "base_peg = 1.0". 
+        # But if I use 1.0, it's stricter than before. 
+        # Wait, the user said: "base_peg = 1.0 ... dynamic_threshold = base_peg + (0.2 * market_z_score)"
+        # And "將原本寫死的 1.5 替換為 dynamic_threshold"
+        # So I should use 1.0 as the base for the formula.
         
-        # Normalize score -100 to 100 -> -1.0 to 1.0
-        normalized_score = max(-1.0, min(1.0, market_score / 100.0))
+        base_peg_formula = 1.0
+        sensitivity = 0.2
         
-        adjustment = 1 + (sensitivity * normalized_score)
-        dynamic_peg = base_peg * adjustment
+        adjustment = sensitivity * market_z_score
+        dynamic_peg = base_peg_formula + adjustment
         
-        # Clamp to reasonable limits (e.g. 1.0 to 2.0)
-        return max(1.0, min(2.0, dynamic_peg))
+        # Clamp to reasonable limits (0.8 to 2.0)
+        return max(0.8, min(2.0, dynamic_peg))
 
     def _calculate_sentiment_adjusted_target(self, original_target: float, sentiment_score: float) -> float:
         """
@@ -368,7 +397,7 @@ class GARPStrategy:
         adjustment = 1 + (sensitivity * normalized_score)
         return original_target * adjustment
 
-    def _check_valuation(self, card: StockHealthCard, info: dict, current_price: float):
+    def _check_valuation(self, card: StockHealthCard, info: dict, current_price: float, adv: AdvancedFinancials = None):
         """
         Valuation Check:
         - PEG < Dynamic Threshold (Adaptive to Market)
@@ -395,13 +424,45 @@ class GARPStrategy:
         
         # Dynamic PEG Limit
         market_score = self.get_market_sentiment()
-        dynamic_max_peg = self._calculate_dynamic_peg(market_score)
         
-        if abs(market_score) > 20: 
-             direction = "Bullish" if market_score > 0 else "Bearish"
-             card.valuation_check['tags'].append(f"⚖️ Dynamic PEG: {dynamic_max_peg:.2f} ({direction} Market)")
+        # Calculate Z-Score
+        try:
+            db = DatabaseManager()
+            stats = db.get_sentiment_stats("SPY", days=30)
+            mean = stats.get('mean', 0.0)
+            std = stats.get('std_dev', 1.0)
+            
+            z_score = (market_score - mean) / std
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to calc Z-Score: {e}")
+            z_score = 0.0
+
+        dynamic_max_peg = self._calculate_dynamic_peg(z_score)
+        
+        if abs(z_score) > 0.5: 
+             direction = "Bullish" if z_score > 0 else "Bearish"
+             card.valuation_check['tags'].append(f"⚖️ Dynamic PEG: {dynamic_max_peg:.2f} ({direction} Market, Z={z_score:.2f})")
         else:
-             card.valuation_check['tags'].append(f"⚖️ PEG Limit: {dynamic_max_peg:.2f}")
+             card.valuation_check['tags'].append(f"⚖️ PEG Limit: {dynamic_max_peg:.2f} (Neutral Market, Z={z_score:.2f})")
+
+        # === 1. Deep Value Check (AI DCF) ===
+        # If available, this takes precedence or supplements analyst targets
+        if adv:
+            dcf_res = adv.calculate_sentiment_adjusted_dcf(z_score)
+            intrinsic_val = dcf_res.get('intrinsic_value')
+            
+            if intrinsic_val and intrinsic_val > 0:
+                logger.info(f"🧮 DCF Calc: ${intrinsic_val:.2f} (Z={z_score:.2f}, Disc={dcf_res.get('discount_rate', 0):.1%})")
+                card.valuation_check['dcf'] = dcf_res
+                mos_dcf = (intrinsic_val - current_price) / current_price
+                card.valuation_check['margin_of_safety_dcf'] = mos_dcf
+                
+                if mos_dcf > 0.15: # 15% Safety Margin
+                     card.valuation_check['tags'].append(f"✅ Deep Value Buy (MoS: {mos_dcf:.0%})")
+                elif mos_dcf < -0.10: # 10% Overvalued
+                     card.valuation_check['tags'].append(f"⚠️ DCF Overvalued (Premium: {-mos_dcf:.0%})")
+            else:
+                 card.valuation_check['dcf_error'] = dcf_res.get('details')
 
         # PEG Check
         if peg_ratio is not None:

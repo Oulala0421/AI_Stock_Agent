@@ -351,6 +351,78 @@ class DatabaseManager:
         except PyMongoError as e:
             logger.error(f"⚠️ 歷史資料查詢失敗: {symbol} - {e}")
             return []
+
+    def get_sentiment_stats(self, symbol: str, days: int = 30) -> Dict[str, float]:
+        """
+        Calculate sentiment statistics (Mean, StdDev) for Z-Score calculation.
+        
+        Args:
+            symbol: Stock symbol (usually 'SPY' for market sentiment)
+            days: Lookback period
+            
+        Returns:
+            Dict with 'mean' and 'std_dev'. Defaults to mean=0, std=1 if insufficient data.
+        """
+        if not self.enabled:
+            return {'mean': 0.0, 'std_dev': 1.0}
+            
+        try:
+            collection = self._db.daily_snapshots
+            
+            # Aggregation Pipeline
+            pipeline = [
+                # 1. Match symbol & date range
+                {
+                    "$match": {
+                        "symbol": symbol
+                    }
+                },
+                # 2. Sort by date desc and limit
+                { "$sort": { "date": -1 } },
+                { "$limit": days },
+                # 3. Project sentiment score (handle missing/nested fields)
+                {
+                    "$project": {
+                        "score": "$raw_data.advanced_metrics.news_analysis.sentiment_score"
+                    }
+                },
+                # 4. Filter out nulls
+                {
+                    "$match": {
+                        "score": { "$ne": None }
+                    }
+                },
+                # 5. Group to calculate stats
+                {
+                    "$group": {
+                        "_id": None,
+                        "mean": { "$avg": "$score" },
+                        "std_dev": { "$stdDevPop": "$score" }, # Population StdDev matches Z-Score usage
+                        "count": { "$sum": 1 }
+                    }
+                }
+            ]
+            
+            results = list(collection.aggregate(pipeline))
+            
+            if not results or results[0]['count'] < 2:
+                # Need at least 2 data points for meaningful stats
+                return {'mean': 0.0, 'std_dev': 1.0}
+                
+            stats = results[0]
+            # Avoid division by zero if std_dev is 0 (constant sentiment)
+            std_dev = stats.get('std_dev', 0.0)
+            if std_dev == 0:
+                std_dev = 1.0
+                
+            return {
+                'mean': stats.get('mean', 0.0),
+                'std_dev': std_dev
+            }
+            
+        except Exception as e:
+            logger.error(f"⚠️ Failed to get sentiment stats for {symbol}: {e}")
+            return {'mean': 0.0, 'std_dev': 1.0}
     
     def close(self):
         """

@@ -107,29 +107,30 @@ python main.py --dry-run
 
 ---
 
+## 🔮 V2.0: Deep Value & Sentiment Engine
+
+New in Version 2.0:
+- **Sentiment-Adjusted DCF**: 內在價值模型會根據市場情緒 (Z-Score) 動態調整折現率。
+  - 市場貪婪 (Z > 1) -> 折現率提高 (懲罰估值)
+  - 市場恐慌 (Z < -1) -> 折現率降低 (挖掘機會)
+- **Private Risk Engine**: 針對持倉進行「集中度」與「連動性」風險檢查 (Portfolio Manager)。
+- **Visual War Room**: 升級版 Streamlit 戰情室 (`app.py`)。
+
+---
+
 ## 📈 Strategy Logic (GARP)
 
 系統根據以下指標進行評分 (0-10 分)：
 
-1.  **Valuation (估值)**: PEG Ratio, P/E vs Industry
+1.  **Valuation (估值)**: PEG Ratio, P/E vs Industry, **DCF Margin of Safety**
 2.  **Growth (成長)**: Revenue Growth, EPS Growth
 3.  **Quality (品質)**: ROE, Net Margin, Debt/Equity
 4.  **Technical (技術)**: RSI, Moving Averages
 
 **評級標準**:
-- 🟢 **PASS**: 總分 >= 7 且無重大紅旗
+- 🟢 **PASS**: 總分 >= 7 且無重大紅旗 (Deep Value > 15% 優先)
 - 🟡 **WATCHLIST**: 總分 >= 5
 - 🔴 **REJECT**: 總分 < 5 或有重大紅旗
-
----
-
-## 🤖 AI News Agent
-
-- **Engine**: Perplexity AI (`llama-3.1-sonar-small-128k-online`)
-- **Prompting**: 金融分析師角色設定，專注於重大催化劑 (Catalysts) 與風險
-- **Cost Control**:
-  - ✅ PASS/WATCHLIST: 獲取新聞
-  - ❌ REJECT: 跳過新聞 (節省 API 額度)
 
 ---
 

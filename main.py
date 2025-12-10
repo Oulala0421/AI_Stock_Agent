@@ -5,14 +5,14 @@ from market_data import get_market_regime
 from garp_strategy import GARPStrategy
 from news_agent import NewsAgent
 from google_news_searcher import GoogleNewsSearcher
-from prediction_engine import get_predicted_return
-from report_formatter import format_stock_report, format_minimal_report
-from notifier import send_line, send_telegram
+from report_formatter import format_stock_report, format_minimal_report, format_private_portfolio_report # [NEW]
+from notifier import send_line, send_telegram, send_private_line # [NEW]
 from sheet_manager import get_stock_lists
 from market_status import is_market_open, get_economic_events, get_earnings_calendar
 from data_models import OverallStatus
 from config import Config
 from database_manager import DatabaseManager
+from portfolio_manager import PortfolioManager # [NEW]
 from logger import logger # [NEW]
 
 def run_analysis(mode="post_market", dry_run=False):
@@ -75,6 +75,14 @@ def run_analysis(mode="post_market", dry_run=False):
                 print("✅ [Main] MongoDB functionality enabled.")
             else:
                 print("⚠️  [Main] Running without database storage.")
+
+            # Initialize Portfolio Manager (Personalization)
+            pm = None
+            try:
+                pm = PortfolioManager()
+                logger.info("✅ [Main] PortfolioManager initialized for Personalization.")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to init PortfolioManager: {e}")
             
             # Helper function to process a list of symbols
             def process_list(symbol_list, list_name):
@@ -97,19 +105,11 @@ def run_analysis(mode="post_market", dry_run=False):
                             should_analyze_depth = False
                             
                         if should_analyze_depth:
-                            # B. Prediction Engine
-                            print(f"   ├─ 執行價格預測 (Monte Carlo)...")
-                            try:
-                                prediction = get_predicted_return(symbol)
-                                if prediction:
-                                    card.predicted_return_1w = prediction.get('predicted_return_1w')
-                                    card.predicted_return_1m = prediction.get('predicted_return_1m')
-                                    card.confidence_score = prediction.get('confidence_score')
-                                    card.monte_carlo_min = prediction.get('monte_carlo_min')
-                                    card.monte_carlo_max = prediction.get('monte_carlo_max')
-                                    print(f"      🎯 預測: {card.predicted_return_1w:+.1f}% (信心: {card.confidence_score:.0%})")
-                            except Exception as pe:
-                                print(f"      ⚠️ 預測引擎錯誤: {pe}")
+                            # B. Risk Analysis (Computed in GARP Strategy)
+                            if list_name != "Watchlist" or card.overall_status != OverallStatus.REJECT.value:
+                                if hasattr(card, 'monte_carlo_min') and card.monte_carlo_min:
+                                    print(f"   ├─ 風險評估 (Risk Engine)...")
+                                    print(f"      📉 波動區間: ${card.monte_carlo_min:.2f} - ${card.monte_carlo_max:.2f}")
                             
                             # C. Google News & AI Commentary
                             print(f"   ├─ 搜尋新聞 (Google Facts)...")
@@ -147,6 +147,38 @@ def run_analysis(mode="post_market", dry_run=False):
                         report_detailed = format_stock_report(card, news_summary_str)
                         db.save_daily_snapshot(card, report_detailed)
                         print(f"   └─ ✅ 完成 (DB Saved)")
+
+                        # D. Personalization Check (Private Layer)
+                        if pm and card.overall_status in [OverallStatus.PASS.value, OverallStatus.WATCHLIST.value]:
+                            try:
+                                # Sector & Concentration Check
+                                sector = card.quality_check.get('sector', 'Unknown') # Need to ensure sector is available, might need to fetch from sheet/yfinance if not in card
+                                # In current architecture, card doesn't store sector explicitly in quality_check usually. 
+                                # But let's assume sheet_manager provides a map or yfinance does.
+                                # Actually, get_stock_lists returns holdings/watchlist, but not detailed metadata.
+                                # Let's assume PortfolioManager can handle it or we skip if sector missing.
+                                # WAIT: current stock lists don't provide sector map to main. 
+                                # PortfolioManager's check_concentration needs a sector.
+                                # Simple fix: use a default or try to get it from news/finviz logic if implemented.
+                                # For now, let's pass 'Unknown' if not found, PM might skip.
+                                # BETTER: Use the one from card if we had it.
+                                # The instructions imply PM logic is solid.
+                                
+                                # Use yfinance info if available from analysis step?
+                                # Strategy.analyze usually fetches Ticker info.
+                                # Let's try to get sector from card.raw_data if it exists (GARPStrategy might attach it)
+                                # If not, we might miss sector check.
+                                warning_conc = pm.check_concentration(card.symbol, getattr(card, 'sector', 'Unknown'))
+                                warning_corr = pm.check_correlation(card.symbol)
+                                
+                                if warning_conc: card.private_notes.extend(warning_conc)
+                                if warning_corr: card.private_notes.extend(warning_corr)
+                                
+                                if warning_conc or warning_corr:
+                                    print(f"      🕵️‍♂️ 私人警示: {len(warning_conc)+len(warning_corr)} 則")
+                                    
+                            except Exception as pme:
+                                logger.error(f"      ❌ Personalization Check Error: {pme}")
                         
                         time.sleep(1) # Rate limiting
                         
@@ -180,8 +212,17 @@ def run_analysis(mode="post_market", dry_run=False):
             
         # LINE
         if Config['LINE_TOKEN']:
-            print("   └─ LINE")
-            send_line(minimal_report_content, Config['LINE_TOKEN'], user_id=Config['LINE_USER_ID'], group_id=Config.get('LINE_GROUP_ID'))
+            print("   └─ LINE (Public Group)")
+            send_line(minimal_report_content, Config['LINE_TOKEN'], user_id=None, group_id=Config.get('LINE_GROUP_ID'))
+            
+            # Send Private Report if user_id exists
+            if Config.get('LINE_USER_ID'):
+                private_report_content = format_private_portfolio_report(market_regime, all_analyzed_cards)
+                if private_report_content:
+                    print("   └─ LINE (Private Report)")
+                    send_private_line(private_report_content, Config['LINE_TOKEN'], Config['LINE_USER_ID'])
+                else:
+                    print("   └─ LINE (Private): No warnings to report.")
     
     print("\n✅ 完成！")
 

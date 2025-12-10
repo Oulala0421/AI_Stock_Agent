@@ -276,3 +276,113 @@ class AdvancedFinancials:
         except Exception as e:
             logger.error(f"Error calculating FCF Yield for {self.ticker.ticker}: {e}")
             return {"yield": None, "details": f"Error: {e}"}
+
+    def calculate_sentiment_adjusted_dcf(self, sentiment_z_score: float) -> Dict[str, Any]:
+        """
+        Calculates Intrinsic Value using a 2-Stage DCF model adjusted for market sentiment.
+        
+        Logic:
+        - Base Discount Rate: 9.0%
+        - Adjustment: If Market Z-Score > 0 (Overheated), add penalty rate.
+                      Penalty = 2.0% * tanh(Z-Score)
+        - Growth: Revenue Growth from Info (Capped at 15%)
+        - Terminal Growth: 3.0%
+        """
+        import math
+        
+        if not self.has_data:
+             return {"intrinsic_value": None, "details": "No Data"}
+
+        try:
+             # 1. Free Cash Flow (TTM/Recent)
+            fcf = 0
+            if 'Free Cash Flow' in self.cf.index:
+                fcf = self.cf.loc['Free Cash Flow'].iloc[0]
+            else:
+                # Manual Calc
+                ocf_idx = 'Operating Cash Flow' if 'Operating Cash Flow' in self.cf.index else 'Total Cash From Operating Activities'
+                cfe_idx = 'Capital Expenditure' if 'Capital Expenditure' in self.cf.index else 'Capital Expenditures'
+                
+                if ocf_idx in self.cf.index:
+                    ocf = self.cf.loc[ocf_idx].iloc[0]
+                    capex = self.cf.loc[cfe_idx].iloc[0] if cfe_idx in self.cf.index else 0
+                    fcf = ocf - abs(capex)
+                else:
+                    return {"intrinsic_value": None, "details": "Cannot calc FCF"}
+            
+            # 2. Shares Outstanding
+            shares = self.ticker.info.get('sharesOutstanding')
+            if not shares:
+                # Try balance sheet
+                 if 'Ordinary Shares Number' in self.bs.index:
+                    shares = self.bs.loc['Ordinary Shares Number'].iloc[0]
+                 elif 'Share Issued' in self.bs.index:
+                    shares = self.bs.loc['Share Issued'].iloc[0]
+            
+            if not shares:
+                 return {"intrinsic_value": None, "details": "No Share Count"}
+
+            # 3. Growth Rate
+            # Try 'revenueGrowth' from info, else default conservatively
+            growth_input = self.ticker.info.get('revenueGrowth', 0.05)
+            if growth_input is None: growth_input = 0.05
+            
+            # Cap at 15% (Conservative)
+            growth_rate = min(growth_input, 0.15)
+            # Floor at 2% 
+            growth_rate = max(growth_rate, 0.02)
+
+            # 4. Discount Rate (Sentiment Adjusted)
+            base_rate = 0.09
+            sentiment_penalty = 0.0
+            
+            if sentiment_z_score > 0:
+                # Tanh ranges 0 to 1 for positive inputs
+                # Max penalty = 3% (Slightly increased to be more responsive? User said 0.02 * ... let's stick to user 0.02)
+                sentiment_penalty = 0.02 * math.tanh(sentiment_z_score)
+            
+            discount_rate = base_rate + sentiment_penalty
+            
+            # 5. Projection (5 Years)
+            future_fcf = []
+            current_fcf = fcf
+            
+            # If FCF is negative, DCF breaks.
+            if fcf < 0:
+                 return {"intrinsic_value": None, "details": "Negative FCF"}
+
+            for i in range(1, 6):
+                current_fcf = current_fcf * (1 + growth_rate)
+                future_fcf.append(current_fcf)
+                
+            # 6. Terminal Value
+            # Perpetuity Growth Method
+            terminal_growth = 0.03
+            # Safety: Discount rate must be > terminal growth
+            if discount_rate <= terminal_growth:
+                discount_rate = terminal_growth + 0.01 
+                
+            terminal_val = (future_fcf[-1] * (1 + terminal_growth)) / (discount_rate - terminal_growth)
+            
+            # 7. Discounting to Present Value
+            dcf_value = 0
+            for i, cash in enumerate(future_fcf):
+                dcf_value += cash / ((1 + discount_rate) ** (i + 1))
+                
+            pv_terminal = terminal_val / ((1 + discount_rate) ** 5)
+            
+            total_equity_value = dcf_value + pv_terminal
+            
+            intrinsic_value = total_equity_value / shares
+            
+            return {
+                "intrinsic_value": intrinsic_value,
+                "discount_rate": discount_rate,
+                "growth_rate": growth_rate,
+                "sentiment_penalty": sentiment_penalty,
+                "details": f"DCF (g={growth_rate:.1%}, r={discount_rate:.1%})"
+            }
+
+        except Exception as e:
+            logger.error(f"DCF Calc failed for {self.ticker.ticker}: {e}")
+            return {"intrinsic_value": None, "details": str(e)}

@@ -154,3 +154,14 @@ def send_line(message, token, user_id=None, group_id=None):
 # 為了相容 main.py，保留舊函式名稱並轉接
 def send_telegram(message, token, chat_id):
     send_telegram_chunked(message, token, chat_id)
+
+def send_private_line(message, token, user_id):
+    """
+    專門用於發送私人通知的輔助函式
+    """
+    if not user_id:
+        print("⚠️ 無法發送私人訊息: USER_ID 未設定")
+        return
+    
+    print(f"🤫 發送私人通知給 {user_id[:6]}...")
+    send_line(message, token, user_id=user_id)

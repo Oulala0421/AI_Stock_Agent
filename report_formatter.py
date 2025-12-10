@@ -44,6 +44,22 @@ def format_stock_report(card: StockHealthCard, news_summary: Optional[str] = Non
     de_str = f"{de:.0f}%" if de is not None else "N/A"
     
     summary_line = f"📊 ROE: {roe_str} | PEG: {peg_str} | Debt/Eq: {de_str}"
+
+    # 3.5 DCF Valuation Section
+    dcf_section = ""
+    dcf_data = card.valuation_check.get('dcf')
+    if dcf_data and dcf_data.get('intrinsic_value'):
+        intrinsic_val = dcf_data['intrinsic_value']
+        discount_rate = dcf_data.get('discount_rate', 0.09)
+        mos = card.valuation_check.get('margin_of_safety_dcf', 0.0)
+        
+        mos_str = f"+{mos:.1%}" if mos > 0 else f"{mos:.1%}"
+        mos_icon = "✅" if mos > 0.15 else ("⚠️" if mos < -0.1 else "")
+        
+        analyst_target = card.valuation_check.get('fair_value')
+        analyst_str = f"${analyst_target:.2f}" if analyst_target else "N/A"
+        
+        dcf_section = f"\n💰 估值分析 (DCF):\n   • 現價: ${card.price:.2f}\n   • AI 內在價值: ${intrinsic_val:.2f} (折現率: {discount_rate:.1%})\n   • 安全邊際: {mos_str} {mos_icon}\n   • 分析師目標: {analyst_str} (僅供參考)"
     
     # 4. Prediction Section (Regime-Based Bootstrap Engine)
     prediction_section = ""
@@ -94,7 +110,7 @@ def format_stock_report(card: StockHealthCard, news_summary: Optional[str] = Non
     report = f"""
 {header}
 {tags_str}
-{summary_line}{prediction_section}{news_section}{red_flags_section}
+{summary_line}{dcf_section}{prediction_section}{news_section}{red_flags_section}
 """.strip()
 
     return report
@@ -146,8 +162,11 @@ def format_minimal_report(market_status, stock_cards):
         icon = "🟢" if card.overall_status == "PASS" else "🟡"
         if card.overall_status == "REJECT": icon = "🔴" # 以防萬一
         
-        # 價格行
-        report.append(f"{icon} {card.symbol} | ${card.price:.2f}")
+        # 價格行 & Deep Value Tag
+        dcf_mos = card.valuation_check.get('margin_of_safety_dcf')
+        fv_tag = " | 💰 Deep Value" if dcf_mos and dcf_mos > 0.15 else ""
+        
+        report.append(f"{icon} {card.symbol} | ${card.price:.2f}{fv_tag}")
         
         # 預測行 (如果有預測數據)
         if hasattr(card, 'predicted_return_1w') and card.predicted_return_1w is not None:
@@ -185,4 +204,47 @@ def format_minimal_report(market_status, stock_cards):
 
     # 3. Footer (已移除新聞列表與詳細財務指標)
     
+    return "\n".join(report)
+
+def format_private_portfolio_report(market_status, stock_cards):
+    """
+    生成私人投顧報告 (Personalized)
+    包含：Risk Warnings (Concentration, Correlation)
+    """
+    from config import Config
+    
+    # Filter cards that have private notes
+    cards_with_notes = [c for c in stock_cards if c.private_notes]
+    
+    if not cards_with_notes:
+        return None # No private warnings, skip sending
+        
+    report = ["🕵️‍♂️ 【私人投資顧問報告】", ""]
+    
+    # 市場狀態摘要
+    spy_trend = "🌤️ 多頭" if market_status.get('is_bullish') else "⛈️ 空頭"
+    z_score_str = f"{market_status.get('z_score', 0.00):.2f}"
+    report.append(f"📊 市場狀態: {spy_trend} (Z-Score: {z_score_str})")
+    report.append("")
+    
+    report.append("🚨 風險警示 (針對您的持倉):")
+    
+    for i, card in enumerate(cards_with_notes, 1):
+        status_emoji = {
+            "PASS": "🟢", "WATCHLIST": "🟡", "REJECT": "🔴"
+        }.get(card.overall_status, "⚪")
+        
+        report.append(f"{i}. {card.symbol} ({status_emoji} {card.overall_status})")
+        
+        for note in card.private_notes:
+             report.append(f"   {note}")
+             
+        # Add a small suggestion logic
+        if "集中度過高" in str(card.private_notes) or "高度連動" in str(card.private_notes):
+            report.append(f"   💡 建議: 減量買進或觀察")
+        elif "低" in str(card.private_notes) and "相關性" in str(card.private_notes):
+             report.append(f"   ✅ 建議: 可作為分散配置")
+
+        report.append("")
+        
     return "\n".join(report)
