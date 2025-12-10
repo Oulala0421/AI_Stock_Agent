@@ -343,7 +343,8 @@ def main():
             conf = stock.get('confidence_score')
             if conf is None: conf = raw_data.get('confidence_score')
             
-            sparkline = stock.get('sparkline', [])
+            # [Fix] Retrieve Sparkline from root OR nested raw_data (where Strategy saves it)
+            sparkline = stock.get('sparkline') or raw_data.get('sparkline', [])
             
             # Styles
             if status == 'PASS':
