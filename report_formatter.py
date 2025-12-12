@@ -170,70 +170,89 @@ def format_minimal_report(market_status, stock_cards, macro_status: Optional[str
         report.append("💤 本日無重點關注標的")
     
     for card in target_stocks:
-        # A. 第一行: 狀態圖示 + Symbol (Bold) + Price
-        icon = "🟢" if card.overall_status == "PASS" else "🟡"
-        if card.overall_status == "REJECT": icon = "🔴"
-        
-        header_line = f"{icon} **{card.symbol}** ${card.price:.2f}"
+        # A. 第一行: 標題 (Symbol + Rating)
+        # Rating Emoji
+        rating_map = {
+            "PASS": "🟢",
+            "WATCHLIST": "🟡",
+            "REJECT": "🔴"
+        }
+        icon = rating_map.get(card.overall_status, "⚪")
+        header_line = f"{icon} **{card.symbol}**"
         report.append(header_line)
         
-        # B. 第二行: 核心數據 (AI Valuation + Risk Range)
+        # B. 第二行: 硬數據 (Price | DCF | Range)
+        line2_parts = []
+        line2_parts.append(f"現價: ${card.price:.2f}") # Actually user example: "現價: $458". I'll use .2f generally to be safe.
+        
         dcf_data = card.valuation_check.get('dcf', {})
         intrinsic_val = dcf_data.get('intrinsic_value') if dcf_data else None
         
-        # Debug/Fallback info
-        line2_content = None
-        
         if intrinsic_val and intrinsic_val > 0:
-            mos = card.valuation_check.get('margin_of_safety_dcf', 0.0)
-            mos_sign = "+" if mos > 0 else ""
-            
-            # Risk Range addition
-            range_str = ""
-            if card.monte_carlo_min is not None and card.monte_carlo_max is not None:
-                range_str = f" | 區間 ${card.monte_carlo_min:.2f}-${card.monte_carlo_max:.2f}"
-            
-            line2_content = f"   └─ 💰 DCF估值: ${intrinsic_val:.2f} (MoS {mos_sign}{mos:.0%}){range_str}"
-        
-        elif card.monte_carlo_min is not None and card.monte_carlo_max is not None:
-             # Fallback to Risk Range only
-             r_min = card.monte_carlo_min
-             r_max = card.monte_carlo_max
-             if r_min > 0 and r_max > 0:
-                 line2_content = f"   └─ 📉 波動區間: ${r_min:.2f} - ${r_max:.2f}"
-        
-        if not line2_content:
-             # Fallback to Analyst Target
-             fair_val = card.valuation_check.get('fair_value')
-             if fair_val:
-                  line2_content = f"   └─ 🎯 目標價: ${fair_val:.2f}"
-             else:
-                  line2_content = f"   └─ ⚠️ 暫無估值數據"
+            # Calculate MoS for display and logic
+            mos_dcf = (intrinsic_val - card.price) / card.price
+            if card.price > intrinsic_val: # Stock is trading at a premium to intrinsic value
+                val_str = f"💰 DCF估值: ${intrinsic_val:.0f} (溢價 {-mos_dcf:.0%})" # Display positive premium
+            else: # Stock is trading at a discount to intrinsic value
+                val_str = f"💰 DCF估值: ${intrinsic_val:.0f} (低估 {mos_dcf:.0%})" # Display positive discount
+            line2_parts.append(val_str)
+        else:
+            line2_parts.append("💰 DCF: N/A")
+            mos_dcf = 0.0 # Initialize for later use in line C
 
-        report.append(line2_content)
+        if card.monte_carlo_min is not None and card.monte_carlo_max is not None:
+            line2_parts.append(f"區間 ${card.monte_carlo_min:.0f}-${card.monte_carlo_max:.0f}")
         
-        # C. 第三行: AI 摘要
-        summary_text = ""
-        if hasattr(card, 'news_summary_str') and card.news_summary_str:
-            # Clean up the summary string
-            raw_summary = card.news_summary_str
+        report.append(" | ".join(line2_parts))
+
+        # C. 第三行: 短評 (Logic Rule)
+        # 3.1 Valuation Status
+        # mos < -0.2 -> ⚠️嚴重高估
+        # mos < -0.1 -> 高估 (User said "高估" but let's use emoji if possible? No emoji in user spec for this one?)
+        # User spec: mos < -0.1 -> "高估". Let's add emoji 🔸? Or just text. User example has "⚠️嚴重高估".
+        
+        val_status = "⚖️合理"
+        if mos_dcf < -0.2:
+            val_status = "⚠️嚴重高估"
+        elif mos_dcf < -0.1:
+            val_status = "🔸高估" # Add orange diamond for consistency
+        elif mos_dcf > 0.2:
+            val_status = "✅深度低估"
+        elif mos_dcf > 0.1:
+            val_status = "🔹低估" # Blue diamond
             
-            # Simple heuristic: Split by newline, find line with 💬
-            lines = raw_summary.split('\n')
-            reason_line = next((l for l in lines if "💬" in l), None)
+        # 3.2 Market Mood (Z-Score)
+        z_score_match = 0.0
+        for tag in card.valuation_check.get('tags', []):
+            if "Z=" in tag:
+                match = re.search(r"Z=([-\d\.]+)", tag)
+                if match:
+                    z_score_match = float(match.group(1))
+                    break
+        
+        mood_status = "☁️情緒中性"
+        if z_score_match > 1.5:
+            mood_status = "🔥市場過熱"
+        elif z_score_match < -1.5:
+            mood_status = "❄️市場恐慌"
             
-            if reason_line:
-                clean_reason = reason_line.replace("💬", "").strip()
-                summary_text = f"   └─ 🗣️ 分析：{clean_reason}"
-            else:
-                # Fallback: take the whole thing but strip newlines
-                clean_text = raw_summary.replace("\n", " ").replace("💡", "").replace("💬", "").strip()
-                summary_text = f"   └─ 🗣️ 分析：{clean_text}"
-        
-        if summary_text:
-             report.append(summary_text)
-        
-        report.append("") # 股票間空行
+        line3 = f"   📊 {val_status} | {mood_status} (Z={z_score_match:.1f})"
+        report.append(line3)
+
+        # D. 第四行: AI 分析
+        news_analysis = card.advanced_metrics.get('news_analysis')
+        if news_analysis:
+            summary = news_analysis.get('summary_reason', '暫無分析')
+            # Ensure "🗣️ 分析：" prefix and clean format
+            clean_summary = summary.replace("1. ", "").replace("2. ", "").replace("3. ", "")
+            # Remove any potential "Analysis:" prefixes from AI
+            clean_summary = clean_summary.replace("分析：", "").replace("Analysis:", "").strip()
+            
+            report.append(f"   🗣️ 分析：{clean_summary}")
+        else:
+            report.append(f"   🗣️ 分析：暫無 AI 觀點")
+            
+        report.append("") # Spacer
 
     return "\n".join(report)
 

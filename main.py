@@ -21,6 +21,12 @@ def run_analysis(mode="post_market", dry_run=False):
     
     # 0. Check Market Status
     market_is_open = is_market_open()
+    
+    # [Verification] Force open for dry-run
+    if dry_run: 
+        logger.info("🔧 Dry Run Mode: Forcing market status to OPEN")
+        market_is_open = True
+        
     if not market_is_open:
         logger.info("😴 今日美股休市，執行休市簡報模式。")
     

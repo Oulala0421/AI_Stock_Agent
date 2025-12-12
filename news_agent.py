@@ -170,9 +170,10 @@ class NewsAgent:
             news_summary = self._format_news_for_llm(news_list)
             
             # Generate analysis
+            # Generate analysis
             logger.info(f"🤖 Analyzing {len(news_list)} news articles for {symbol}...")
             
-            prompt = self._create_analysis_prompt(symbol, news_summary, valuation_data)
+            prompt = self._create_analysis_prompt(symbol, news_list, valuation_data)
             
             # Generate content with error handling
             try:
@@ -221,61 +222,63 @@ class NewsAgent:
                 formatted += f"摘要: {article['snippet']}\n"
         return formatted.strip()
     
-    def _create_analysis_prompt(self, symbol: str, news_summary: str, valuation_data: Optional[Dict[str, Any]] = None) -> str:
+    def _create_analysis_prompt(self, symbol: str, news_list: List[Dict], valuation_data: Optional[Dict]) -> str:
         """
-        Create structured prompt with Fund Manager persona and Hard Data
+        Create the analysis prompt for the AI model.
+        Phase 6.9: Strict Fund Manager Persona (80 words, Advice Focused)
         """
-        # Format Valuation Data
+        news_text = "\n".join([f"- {n['title']} ({n['date']}): {n['snippet']}" for n in news_list])
+        
+        # Format Hard Data Block
+        hard_data_block = ""
         if valuation_data:
-            price = valuation_data.get('price', 'N/A')
-            intrinsic = valuation_data.get('intrinsic_value', 'N/A')
-            mos = valuation_data.get('mos')
+            # Safe extraction with defaults
+            price = float(valuation_data.get('price') or 0.0)
+            intrinsic = float(valuation_data.get('intrinsic_value') or 0.0)
+            mos = float(valuation_data.get('mos') or 0.0)
             rating = valuation_data.get('rating', 'N/A')
-            v_min = valuation_data.get('monte_carlo_min', 'N/A')
-            v_max = valuation_data.get('monte_carlo_max', 'N/A')
+            r_min = float(valuation_data.get('monte_carlo_min') or 0.0)
+            r_max = float(valuation_data.get('monte_carlo_max') or 0.0)
             
-            # Format numbers safely
-            price_str = f"{price:.2f}" if isinstance(price, (int, float)) else str(price)
-            intrinsic_str = f"{intrinsic:.2f}" if isinstance(intrinsic, (int, float)) else str(intrinsic)
-            mos_str = f"{mos:.1%}" if isinstance(mos, (int, float)) else "N/A"
-            min_str = f"{v_min:.2f}" if isinstance(v_min, (int, float)) else str(v_min)
-            max_str = f"{v_max:.2f}" if isinstance(v_max, (int, float)) else str(v_max)
-            
-            hard_data_section = f"""
+            hard_data_block = f"""
 【硬數據】
 - 股票: {symbol}
-- 現價: ${price_str}
-- DCF內在價值: ${intrinsic_str} (安全邊際 MoS: {mos_str})
+- 現價: ${price:.2f}
+- DCF內在價值: ${intrinsic:.2f} (安全邊際 MoS: {mos:.1%})
 - 評級: {rating}
-- 波動區間: ${min_str} - ${max_str}
+- 波動區間: ${r_min:.2f} - ${r_max:.2f}
 """
         else:
-            hard_data_section = f"【硬數據】\n暫無 {symbol} 的估值數據。"
+            hard_data_block = f"【硬數據】\n- 股票: {symbol}\n- 暫無估值數據"
 
-        prompt = f"""你是一位台灣的資深金融分析師。
+        prompt = f"""
+你是一位堅守「長期價值投資」的基金經理人。
 
-{hard_data_section}
+{hard_data_block}
 
 【新聞情報】
-{news_summary}
+{news_text}
 
 【任務】
-請綜合「硬數據」與「新聞」，寫一段約 80-100 字的短評。
-**嚴格禁止使用條列式 (1. 2. 3.)**，請使用流暢的口語敘述。
+請綜合數據與新聞，寫一段 **80 字以內** 的快報 (Flash Note)。
 
-內容必須包含：
-1. (歸因): 解釋為何股價與 DCF 有落差？(是市場定價未來成長導致溢價？還是消息面利空導致折價？)
-2. (現況): 公司目前的體質與動能評價。
-3. (建議): 給出明確操作建議 (例如：溢價過高宜觀望、或是逢低分批佈局)。
+內容結構 (流暢口語，不分段，不條列)：
+1. **歸因/現況**：一句話解釋為何溢價或折價 (例如：溢價反映AI預期...)。
+2. **投資建議**：基於長期持有的立場，給出操作指引。
+   - 溢價(MoS<0)：建議「暫停加碼」、「續抱觀望」或「等待回調」。
+   - 折價(MoS>0)：建議「分批佈局」或「積極累積」。
 
-Output JSON format (no markdown):
+**嚴格要求：**
+- **禁止使用條列式 (1. 2. 3.)**。
+- 字數嚴格控制在 80 字以內。
+- 語氣專業、果斷、直接。
+
+回傳必須是準確的 JSON 格式 (不要 Markdown 標記):
 {{
-    "sentiment": "Positive|Negative|Neutral",
-    "sentiment_score": Integer (-100 to 100),
-    "moat_impact": "Strengthened|Weakened|Unchanged",
-    "prediction": "Bullish|Bearish|Neutral",
-    "confidence": 0.XX,
-    "summary_reason": "這裡填寫上述要求的80-100字基金經理人分析"
+    "sentiment": "Positive/Negative/Neutral",
+    "sentiment_score": 75,
+    "confidence": 0.85,
+    "summary_reason": "你的80字短評"
 }}
 """
         return prompt

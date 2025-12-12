@@ -111,7 +111,7 @@ python main.py --dry-run
 
 New in Version 2.2:
 - **Data-Fed News Agent**: 完美整合數值模型 (GarP/DCF) 與 AI 敘事大腦，自動產生具備「歸因、現況、建議」的基金經理人短評。
-- **Tactical Report 2.0**: 全新戰情介面，單行整合「💰 DCF估值」與「📉 風險區間」，資訊密度極大化。
+- **Tactical Report 2.2**: 標準化「四行戰術報告」，整合「💰硬數據」、「📊邏輯判讀」與「🗣️AI操作建議」，資訊密度極大化。
 - **Sentiment-Adjusted DCF**: 內在價值模型會根據市場情緒 (Z-Score) 動態調整折現率。
 - **Private Risk Engine**: 針對持倉進行「集中度」與「連動性」風險檢查 (Portfolio Manager)。
 
