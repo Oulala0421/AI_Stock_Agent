@@ -107,14 +107,13 @@ python main.py --dry-run
 
 ---
 
-## 🔮 V2.0: Deep Value & Sentiment Engine
+## 🔮 V2.2: Data-Fed Narrative & Tactical Report
 
-New in Version 2.0:
+New in Version 2.2:
+- **Data-Fed News Agent**: 完美整合數值模型 (GarP/DCF) 與 AI 敘事大腦，自動產生具備「歸因、現況、建議」的基金經理人短評。
+- **Tactical Report 2.0**: 全新戰情介面，單行整合「💰 DCF估值」與「📉 風險區間」，資訊密度極大化。
 - **Sentiment-Adjusted DCF**: 內在價值模型會根據市場情緒 (Z-Score) 動態調整折現率。
-  - 市場貪婪 (Z > 1) -> 折現率提高 (懲罰估值)
-  - 市場恐慌 (Z < -1) -> 折現率降低 (挖掘機會)
 - **Private Risk Engine**: 針對持倉進行「集中度」與「連動性」風險檢查 (Portfolio Manager)。
-- **Visual War Room**: 升級版 Streamlit 戰情室 (`app.py`)。
 
 ---
 

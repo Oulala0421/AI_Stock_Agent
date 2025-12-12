@@ -124,37 +124,30 @@ class NewsAgent:
             logger.error(f"❌ Failed to initialize Gemini: {e}")
             self.enabled = False
     
-    def analyze_news(self, symbol: str, news_list: List[Dict[str, str]]) -> Optional[Dict[str, Any]]:
+    def analyze_news(self, symbol: str, news_list: List[Dict[str, str]], valuation_data: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """
         Analyze news articles and generate structured investment commentary
         
         This is the core "Commentator" function:
-        - Receives hard facts (from GoogleNewsSearcher)
+        - Receives hard facts (from GoogleNewsSearcher) and valuation data (from GARPStrategy)
         - Generates AI opinion (structured JSON)
         - NO hallucination (facts are pre-verified)
         
         Args:
             symbol: Stock ticker (e.g., "TSLA")
             news_list: List of news articles from GoogleNewsSearcher
-                      Each article has: title, date, source, snippet
+            valuation_data: Optional dictionary containing DCF, MoS, Rating, etc.
         
         Returns:
             Structured analysis (JSON):
             {
                 "sentiment": "Positive/Negative/Neutral",
-                "sentiment_score": 75,  # -100 to +100
+                "sentiment_score": 75,
                 "moat_impact": "Strengthened/Weakened/Unchanged",
                 "prediction": "Bullish/Bearish/Neutral",
-                "confidence": 0.85,  # 0.0 - 1.0
-                "summary_reason": "一句話理由"
+                "confidence": 0.85,
+                "summary_reason": "Fund Manager Style Commentary (<100 words)"
             }
-            
-            Returns None if analysis fails or agent is disabled
-        
-        Fallback Scenarios:
-        - Empty news_list: Return neutral stance
-        - API error: Return None (graceful degradation)
-        - Invalid JSON: Attempt to parse or return None
         """
         if not self.enabled:
             logger.debug(f"News analysis skipped for {symbol} (agent disabled)")
@@ -179,7 +172,7 @@ class NewsAgent:
             # Generate analysis
             logger.info(f"🤖 Analyzing {len(news_list)} news articles for {symbol}...")
             
-            prompt = self._create_analysis_prompt(symbol, news_summary)
+            prompt = self._create_analysis_prompt(symbol, news_summary, valuation_data)
             
             # Generate content with error handling
             try:
@@ -190,24 +183,9 @@ class NewsAgent:
             
             # Check if response has valid parts
             if not response.parts:
-                # Diagnostic output for debugging
                 finish_reason = response.candidates[0].finish_reason if response.candidates else "UNKNOWN"
                 logger.error(f"❌ No response parts. Finish reason: {finish_reason}")
-                
-                # Check prompt feedback (safety filters)
-                if hasattr(response, 'prompt_feedback'):
-                    logger.error(f"   Prompt feedback: {response.prompt_feedback}")
-                
-                # Fallback to neutral stance
-                logger.info("🔄 Using fallback neutral analysis")
-                return {
-                    "sentiment": "Neutral",
-                    "sentiment_score": 0,
-                    "moat_impact": "Unchanged",
-                    "prediction": "Neutral",
-                    "confidence": 0.5,
-                    "summary_reason": "AI 分析無法完成，建議以技術面為主"
-                }
+                return None
             
             # Parse JSON response
             analysis = json.loads(response.text)
@@ -232,15 +210,7 @@ class NewsAgent:
             return None
     
     def _format_news_for_llm(self, news_list: List[Dict[str, str]]) -> str:
-        """
-        Format news articles into a structured string for LLM
-        
-        Args:
-            news_list: List of news articles
-        
-        Returns:
-            Formatted string with numbered articles
-        """
+        """Format news articles into a structured string for LLM"""
         formatted = ""
         for i, article in enumerate(news_list, 1):
             formatted += f"\n【新聞 {i}】\n"
@@ -249,34 +219,54 @@ class NewsAgent:
             formatted += f"來源: {article['source']}\n"
             if article.get('snippet'):
                 formatted += f"摘要: {article['snippet']}\n"
-        
         return formatted.strip()
     
-    def _create_analysis_prompt(self, symbol: str, news_summary: str) -> str:
+    def _create_analysis_prompt(self, symbol: str, news_summary: str, valuation_data: Optional[Dict[str, Any]] = None) -> str:
         """
-        Create structured prompt for news analysis
-        
-        Optimized for thinking models (Gemini 2.5 Flash)
+        Create structured prompt with Fund Manager persona and Hard Data
         """
-        prompt = f"""Think step-by-step about the impact on {symbol}'s moat and cash flow, then provide the final JSON output.
+        # Format Valuation Data
+        if valuation_data:
+            price = valuation_data.get('price', 'N/A')
+            intrinsic = valuation_data.get('intrinsic_value', 'N/A')
+            mos = valuation_data.get('mos')
+            rating = valuation_data.get('rating', 'N/A')
+            v_min = valuation_data.get('monte_carlo_min', 'N/A')
+            v_max = valuation_data.get('monte_carlo_max', 'N/A')
+            
+            # Format numbers safely
+            price_str = f"{price:.2f}" if isinstance(price, (int, float)) else str(price)
+            intrinsic_str = f"{intrinsic:.2f}" if isinstance(intrinsic, (int, float)) else str(intrinsic)
+            mos_str = f"{mos:.1%}" if isinstance(mos, (int, float)) else "N/A"
+            min_str = f"{v_min:.2f}" if isinstance(v_min, (int, float)) else str(v_min)
+            max_str = f"{v_max:.2f}" if isinstance(v_max, (int, float)) else str(v_max)
+            
+            hard_data_section = f"""
+【硬數據】
+- 股票: {symbol}
+- 現價: ${price_str}
+- DCF內在價值: ${intrinsic_str} (安全邊際 MoS: {mos_str})
+- 評級: {rating}
+- 波動區間: ${min_str} - ${max_str}
+"""
+        else:
+            hard_data_section = f"【硬數據】\n暫無 {symbol} 的估值數據。"
 
-Analyze news for {symbol} as a value investor:
+        prompt = f"""你是一位台灣的資深金融分析師。
 
-News Articles:
+{hard_data_section}
+
+【新聞情報】
 {news_summary}
 
-Analysis Steps:
-1. Assess sentiment (Positive/Negative/Neutral)
-2. Assign Sentiment Score (-100 to +100)
-    - -100: Extreme Fear / Bankruptcy Risk
-    - -50: Negative Trend
-    - 0: Neutral / Mixed
-    - +50: Positive Trend
-    - +100: Extreme Greed / Breakthrough
-3. Evaluate moat impact (Strengthened/Weakened/Unchanged)
-4. Predict trend (Bullish/Bearish/Neutral)
-5. Determine confidence (0.0-1.0)
-6. Summarize key reason (Traditional Chinese, <40 chars)
+【任務】
+請綜合「硬數據」與「新聞」，寫一段約 80-100 字的短評。
+**嚴格禁止使用條列式 (1. 2. 3.)**，請使用流暢的口語敘述。
+
+內容必須包含：
+1. (歸因): 解釋為何股價與 DCF 有落差？(是市場定價未來成長導致溢價？還是消息面利空導致折價？)
+2. (現況): 公司目前的體質與動能評價。
+3. (建議): 給出明確操作建議 (例如：溢價過高宜觀望、或是逢低分批佈局)。
 
 Output JSON format (no markdown):
 {{
@@ -285,7 +275,7 @@ Output JSON format (no markdown):
     "moat_impact": "Strengthened|Weakened|Unchanged",
     "prediction": "Bullish|Bearish|Neutral",
     "confidence": 0.XX,
-    "summary_reason": "簡潔理由"
+    "summary_reason": "這裡填寫上述要求的80-100字基金經理人分析"
 }}
 """
         return prompt

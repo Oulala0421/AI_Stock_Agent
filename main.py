@@ -118,7 +118,21 @@ def run_analysis(mode="post_market", dry_run=False):
                                 
                                 if news_list:
                                     print(f"      📄 找到 {len(news_list)} 則新聞，AI 分析中...")
-                                    analysis_result = news_agent.analyze_news(symbol, news_list)
+                                    
+                                    # [Phase 6.8] Prepare Valuation Data for AI (Strict Implementation)
+                                    dcf_val = card.valuation_check.get('dcf', {}).get('intrinsic_value')
+                                    mos_val = card.valuation_check.get('margin_of_safety_dcf')
+                                    
+                                    val_data = {
+                                        "price": card.price,
+                                        "intrinsic_value": dcf_val,
+                                        "mos": mos_val,
+                                        "rating": card.overall_status,
+                                        "monte_carlo_min": card.monte_carlo_min,
+                                        "monte_carlo_max": card.monte_carlo_max
+                                    }
+                                    
+                                    analysis_result = news_agent.analyze_news(symbol, news_list, valuation_data=val_data)
                                     
                                     if analysis_result:
                                         sentiment_emoji = "😃" if analysis_result['sentiment'] == "Positive" else ("😞" if analysis_result['sentiment'] == "Negative" else "😐")
@@ -193,7 +207,23 @@ def run_analysis(mode="post_market", dry_run=False):
 
     # 3. Generate Final Report (Minimal Version)
     print("\n📝 生成最終簡報 (Minimal Mode)...")
-    minimal_report_content = format_minimal_report(market_regime, all_analyzed_cards)
+    
+    # 3.1 Calculate Macro Status (Phase 6.5)
+    vix = market_regime.get('vix', 20.0)
+    is_bullish = market_regime.get('is_bullish', False)
+    
+    if is_bullish and vix < 20:
+        macro_status = "RISK_ON 🚀"
+    elif not is_bullish and vix > 25:
+        macro_status = "RISK_OFF 🛡️"
+    elif not is_bullish:
+        macro_status = "DEFENSIVE 🛡️"
+    else:
+        macro_status = "NEUTRAL ⚖️"
+        
+    print(f"   🌍 Macro Status: {macro_status}")
+
+    minimal_report_content = format_minimal_report(market_regime, all_analyzed_cards, macro_status)
     
     # 4. Send Report
     if dry_run:

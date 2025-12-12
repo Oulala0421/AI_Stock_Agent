@@ -115,15 +115,16 @@ def format_stock_report(card: StockHealthCard, news_summary: Optional[str] = Non
 
     return report
 
-def format_minimal_report(market_status, stock_cards):
+def format_minimal_report(market_status, stock_cards, macro_status: Optional[str] = "NEUTRAL"):
     """
-    生成極簡戰情摘要 (Compact Layout for Mobile)
+    生成極簡戰情摘要 (Tactical Tree Layout)
     Format:
     🤖 **AI 投資戰情** (MM/DD)
     📊 市場: 🌤️多頭 | VIX 14.5
+    🌍 宏觀: RISK_ON
     
     🟢 **NVDA** $120.00
-       └─ 🚀 +2.5% (高) | 💰 Deep Value
+       └─ 💰 AI估值: $135.00 (MoS +12%)
        └─ 💡 營收超預期...
     """
     from config import Config
@@ -140,15 +141,21 @@ def format_minimal_report(market_status, stock_cards):
     else:
         vix_display = f"VIX {vix_val}"
     
-    spy_trend = "🌤️ 多頭" if market_status.get('is_bullish') else "⛈️ 空頭"
-    if 'stage' in market_status: 
-       spy_trend = "🌤️ 多頭" if "Bull" in market_status.get('stage', '') else "⛈️ 空頭"
+    spy_trend = "🌤️多頭" if market_status.get('is_bullish') else "⛈️空頭"
+    if 'stage' in market_status and "Bull" in market_status.get('stage', ''): 
+       spy_trend = "🌤️多頭"
+    elif 'stage' in market_status and "Bear" in market_status.get('stage', ''):
+       spy_trend = "⛈️空頭"
         
     report.append(f"📊 市場: {spy_trend} | {vix_display}")
     
+    # 宏觀狀態 (New)
+    if macro_status:
+        report.append(f"🌍 宏觀: {macro_status}")
+    
     # 動態連結
     if Config.get("DASHBOARD_URL"):
-        report.append(f"🔗 [點擊查看戰情室]({Config['DASHBOARD_URL']})")
+        report.append(f"🔗 [戰情室]({Config['DASHBOARD_URL']})")
     
     report.append("") # 空行分隔
 
@@ -167,61 +174,64 @@ def format_minimal_report(market_status, stock_cards):
         icon = "🟢" if card.overall_status == "PASS" else "🟡"
         if card.overall_status == "REJECT": icon = "🔴"
         
-        # Telegram Markdown supports **bold**, but Line might not. 
-        # We assume Telegram mainly or text-only fallback.
         header_line = f"{icon} **{card.symbol}** ${card.price:.2f}"
         report.append(header_line)
         
-        # B. 第二行: 預測 + DCF Tag
-        details_parts = []
+        # B. 第二行: 核心數據 (AI Valuation + Risk Range)
+        dcf_data = card.valuation_check.get('dcf', {})
+        intrinsic_val = dcf_data.get('intrinsic_value') if dcf_data else None
         
-        # 預測
-        if hasattr(card, 'predicted_return_1w') and card.predicted_return_1w is not None:
-            pred_pct = card.predicted_return_1w
-            direction_emoji = "🚀" if pred_pct > 2.0 else ("📈" if pred_pct > 0.5 else ("📉" if pred_pct < -0.5 else "➡️"))
-            direction_sign = "+" if pred_pct > 0 else ""
-            
-            # Confidence
-            conf_str = "低"
-            if card.confidence_score and card.confidence_score >= 0.7: conf_str = "高"
-            elif card.confidence_score and card.confidence_score >= 0.5: conf_str = "中"
-            
-            details_parts.append(f"{direction_emoji} {direction_sign}{pred_pct:.1f}% ({conf_str})")
+        # Debug/Fallback info
+        line2_content = None
         
-        # Deep Value Tag
-        dcf_mos = card.valuation_check.get('margin_of_safety_dcf')
-        if dcf_mos and dcf_mos > 0.15:
-            details_parts.append(f"💰 Deep Value")
+        if intrinsic_val and intrinsic_val > 0:
+            mos = card.valuation_check.get('margin_of_safety_dcf', 0.0)
+            mos_sign = "+" if mos > 0 else ""
             
-        if details_parts:
-            report.append(f"   └─ {' | '.join(details_parts)}")
+            # Risk Range addition
+            range_str = ""
+            if card.monte_carlo_min is not None and card.monte_carlo_max is not None:
+                range_str = f" | 區間 ${card.monte_carlo_min:.2f}-${card.monte_carlo_max:.2f}"
+            
+            line2_content = f"   └─ 💰 DCF估值: ${intrinsic_val:.2f} (MoS {mos_sign}{mos:.0%}){range_str}"
+        
+        elif card.monte_carlo_min is not None and card.monte_carlo_max is not None:
+             # Fallback to Risk Range only
+             r_min = card.monte_carlo_min
+             r_max = card.monte_carlo_max
+             if r_min > 0 and r_max > 0:
+                 line2_content = f"   └─ 📉 波動區間: ${r_min:.2f} - ${r_max:.2f}"
+        
+        if not line2_content:
+             # Fallback to Analyst Target
+             fair_val = card.valuation_check.get('fair_value')
+             if fair_val:
+                  line2_content = f"   └─ 🎯 目標價: ${fair_val:.2f}"
+             else:
+                  line2_content = f"   └─ ⚠️ 暫無估值數據"
+
+        report.append(line2_content)
         
         # C. 第三行: AI 摘要
-        # Try to get simplified summary
         summary_text = ""
         if hasattr(card, 'news_summary_str') and card.news_summary_str:
-            # Extract just the text part if possible, removing extra newlines or headers
-            # Original format: "💡 AI: 😃 Positive\n💬 reason..."
-            # We want just "💡 reason..." or similar
+            # Clean up the summary string
             raw_summary = card.news_summary_str
-            # Simple cleanup to make it one line if possible or short
+            
+            # Simple heuristic: Split by newline, find line with 💬
             lines = raw_summary.split('\n')
-            clean_lines = []
-            for line in lines:
-                if "AI:" in line: continue # Skip sentiment line to save space? Or keep emoji?
-                # Actually user wants "💡 營收超預期..."
-                # Let's keep the reason part.
-                if line.strip():
-                     clean_lines.append(line.strip())
+            reason_line = next((l for l in lines if "💬" in l), None)
             
-            # Join and truncate if too long?
-            full_text = " ".join(clean_lines)
-            # Remove redundant emojis if any
-            full_text = full_text.replace("💬", "").replace("💡", "").strip()
-            summary_text = f"💡 {full_text}"
-            
+            if reason_line:
+                clean_reason = reason_line.replace("💬", "").strip()
+                summary_text = f"   └─ 🗣️ 分析：{clean_reason}"
+            else:
+                # Fallback: take the whole thing but strip newlines
+                clean_text = raw_summary.replace("\n", " ").replace("💡", "").replace("💬", "").strip()
+                summary_text = f"   └─ 🗣️ 分析：{clean_text}"
+        
         if summary_text:
-             report.append(f"   └─ {summary_text}")
+             report.append(summary_text)
         
         report.append("") # 股票間空行
 

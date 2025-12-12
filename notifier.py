@@ -71,6 +71,9 @@ def send_line(message, token, user_id=None, group_id=None):
     }
     
     # 訊息分段處理 (LINE 限制 5000 字元,預留緩衝設 4800)
+    # [Compatibility] 移除 Markdown ** 粗體語法 (Line 不支援)
+    message = message.replace("**", "")
+    
     max_length = 4800
     message_chunks = [message[i:i+max_length] for i in range(0, len(message), max_length)]
     
