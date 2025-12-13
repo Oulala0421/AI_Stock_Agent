@@ -192,7 +192,7 @@ class NewsAgent:
             analysis = json.loads(response.text)
             
             # Validate required fields
-            required_fields = ["sentiment", "sentiment_score", "moat_impact", "prediction", "confidence", "summary_reason"]
+            required_fields = ["sentiment", "sentiment_score", "confidence", "summary_reason"]
             if all(field in analysis for field in required_fields):
                 logger.info(f"✅ Analysis complete: {analysis['sentiment']} (Score: {analysis['sentiment_score']}, Conf: {analysis['confidence']:.0%})")
                 return analysis

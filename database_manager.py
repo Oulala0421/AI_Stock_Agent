@@ -12,6 +12,7 @@ Date: 2025-12-08
 """
 
 import os
+import time
 import logging
 from datetime import datetime
 from typing import Optional, Dict, Any, List
@@ -85,8 +86,18 @@ class DatabaseManager:
                 retryWrites=True
             )
             
-            # Ping test to verify connection
-            self._client.admin.command('ping')
+            # Retry logic for connection verification (CI/CD robustness)
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    # Ping test to verify connection
+                    self._client.admin.command('ping')
+                    break  # Success
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise e  # Re-raise on final attempt
+                    logger.warning(f"⚠️ MongoDB Ping failed (Attempt {attempt+1}/{max_retries}): {e}. Retrying in 2s...")
+                    time.sleep(2)
             
             # Get database (default: stock_agent)
             self._db = self._client.get_database("stock_agent")
