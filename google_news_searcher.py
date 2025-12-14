@@ -19,6 +19,8 @@ Sprint: 2 - Truth Over Hallucination
 
 import os
 import logging
+import json
+from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from serpapi import GoogleSearch
 from config import Config
@@ -56,12 +58,33 @@ class GoogleNewsSearcher:
         """
         self.api_key = Config.get("SERPAPI_API_KEY")
         self.enabled = bool(self.api_key)
+        self.cache_file = "news_cache.json"
+        self.cache_ttl_hours = 4
         
         if not self.enabled:
             logger.warning("⚠️  SERPAPI_API_KEY not found. News search disabled.")
             logger.info("💡 Set SERPAPI_API_KEY in .env to enable Google News search")
+            logger.info("💡 Set SERPAPI_API_KEY in .env to enable Google News search")
         else:
-            logger.info("✅ GoogleNewsSearcher initialized")
+            logger.info(f"✅ GoogleNewsSearcher initialized (Cache TTL: {self.cache_ttl_hours}h)")
+
+    def _load_cache(self) -> Dict:
+        """Load cache from JSON file"""
+        if not os.path.exists(self.cache_file):
+            return {}
+        try:
+            with open(self.cache_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _save_cache(self, cache_data: Dict):
+        """Save cache to JSON file"""
+        try:
+            with open(self.cache_file, 'w', encoding='utf-8') as f:
+                json.dump(cache_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.warning(f"Failed to save cache: {e}")
     
     def search_news(self, symbol: str, days: int = 3) -> List[Dict[str, str]]:
         """
@@ -96,6 +119,15 @@ class GoogleNewsSearcher:
         if not self.enabled:
             logger.debug(f"News search skipped for {symbol} (API key not set)")
             return []
+            
+        # 1. Check Cache
+        cache = self._load_cache()
+        if symbol in cache:
+            cached_entry = cache[symbol]
+            cached_time = datetime.fromisoformat(cached_entry.get('timestamp'))
+            if datetime.now() - cached_time < timedelta(hours=self.cache_ttl_hours):
+                logger.info(f"🔄 Returning cached news for {symbol} ({len(cached_entry.get('data', []))} articles)")
+                return cached_entry.get('data', [])
         
         try:
             # Construct search query
@@ -145,6 +177,14 @@ class GoogleNewsSearcher:
                 standardized_news.append(standardized_article)
             
             logger.info(f"✅ Found {len(standardized_news)} news articles for {symbol}")
+            
+            # 2. Update Cache
+            cache[symbol] = {
+                "timestamp": datetime.now().isoformat(),
+                "data": standardized_news
+            }
+            self._save_cache(cache)
+            
             return standardized_news
             
         except Exception as e:

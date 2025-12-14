@@ -1,5 +1,6 @@
 from data_models import StockHealthCard, OverallStatus
 from typing import Optional
+from constants import Emojis
 
 def format_stock_report(card: StockHealthCard, news_summary: Optional[str] = None) -> str:
     """
@@ -11,10 +12,10 @@ def format_stock_report(card: StockHealthCard, news_summary: Optional[str] = Non
     """
     # 1. Header
     status_emoji = {
-        OverallStatus.PASS.value: "🟢",
-        OverallStatus.WATCHLIST.value: "🟡",
-        OverallStatus.REJECT.value: "🔴"
-    }.get(card.overall_status, "⚪")
+        OverallStatus.PASS.value: Emojis.PASS,
+        OverallStatus.WATCHLIST.value: Emojis.WATCHLIST,
+        OverallStatus.REJECT.value: Emojis.REJECT
+    }.get(card.overall_status, Emojis.UNKNOWN)
     
     header = f"{status_emoji} {card.symbol} | ${card.price:.2f} | {card.overall_status}"
     
@@ -26,7 +27,7 @@ def format_stock_report(card: StockHealthCard, news_summary: Optional[str] = Non
     all_tags.extend(card.technical_setup.get('tags', []))
     
     # Filter out "No Data" tags to keep it clean, unless it's the only info
-    filtered_tags = [tag for tag in all_tags if "⚪" not in tag]
+    filtered_tags = [tag for tag in all_tags if Emojis.UNKNOWN not in tag]
     if not filtered_tags and all_tags:
         filtered_tags = all_tags # Keep original if everything is empty
         
@@ -54,12 +55,12 @@ def format_stock_report(card: StockHealthCard, news_summary: Optional[str] = Non
         mos = card.valuation_check.get('margin_of_safety_dcf', 0.0)
         
         mos_str = f"+{mos:.1%}" if mos > 0 else f"{mos:.1%}"
-        mos_icon = "✅" if mos > 0.15 else ("⚠️" if mos < -0.1 else "")
+        mos_icon = Emojis.CHECK if mos > 0.15 else (Emojis.WARN if mos < -0.1 else "")
         
         analyst_target = card.valuation_check.get('fair_value')
         analyst_str = f"${analyst_target:.2f}" if analyst_target else "N/A"
         
-        dcf_section = f"\n💰 估值分析 (DCF):\n   • 現價: ${card.price:.2f}\n   • AI 內在價值: ${intrinsic_val:.2f} (折現率: {discount_rate:.1%})\n   • 安全邊際: {mos_str} {mos_icon}\n   • 分析師目標: {analyst_str} (僅供參考)"
+        dcf_section = f"\n{Emojis.MONEY} 估值分析 (DCF):\n   • 現價: ${card.price:.2f}\n   • AI 內在價值: ${intrinsic_val:.2f} (折現率: {discount_rate:.1%})\n   • 安全邊際: {mos_str} {mos_icon}\n   • 分析師目標: {analyst_str} (僅供參考)"
     
     # 4. Prediction Section (Regime-Based Bootstrap Engine)
     prediction_section = ""
@@ -67,33 +68,13 @@ def format_stock_report(card: StockHealthCard, news_summary: Optional[str] = Non
         pred_val = card.predicted_return_1w
         confidence = card.confidence_score if hasattr(card, 'confidence_score') and card.confidence_score else 0.5
         
-        # Determine trend emoji and label
-        if pred_val > 2.0:
-            trend_emoji = "🚀"
-            trend_label = "強勢看漲"
-        elif pred_val > 0.5:
-            trend_emoji = "📈"
-            trend_label = "看漲"
-        elif pred_val > -0.5:
-            trend_emoji = "➡️"
-            trend_label = "持平"
-        elif pred_val > -2.0:
-            trend_emoji = "📉"
-            trend_label = "看跌"
-        else:
-            trend_emoji = "⚠️"
-            trend_label = "強勢看跌"
-        
-        # Confidence level
-        if confidence > 0.7:
-            conf_label = "高"
-        elif confidence > 0.5:
-            conf_label = "中"
-        else:
-            conf_label = "低"
+        # Determine trend and confidence via Model
+        trend_label = card.get_trend_status()
+        conf_label = card.get_confidence_label()
+        confidence = card.confidence_score or 0.5
         
         pred_sign = "+" if pred_val >= 0 else ""
-        prediction_section = f"\n🔮 AI預測: {trend_label} ({pred_sign}{pred_val:.2f}%) | 信心: {conf_label} ({confidence:.0%})"
+        prediction_section = f"\n{Emojis.AI_ROBOT} AI預測: {trend_label} ({pred_sign}{pred_val:.2f}%) | 信心: {conf_label} ({confidence:.0%})"
     
     # 5. News Section
     news_section = ""
@@ -104,7 +85,7 @@ def format_stock_report(card: StockHealthCard, news_summary: Optional[str] = Non
     red_flags_section = ""
     if card.red_flags:
         red_flags_list = "\n".join([f"  - {flag}" for flag in card.red_flags])
-        red_flags_section = f"\n\n⚠️ WARNINGS:\n{red_flags_list}"
+        red_flags_section = f"\n\n{Emojis.ALARM} WARNINGS:\n{red_flags_list}"
         
     # 6. Construct Final Message
     report = f"""
@@ -115,7 +96,7 @@ def format_stock_report(card: StockHealthCard, news_summary: Optional[str] = Non
 
     return report
 
-def format_minimal_report(market_status, stock_cards, macro_status: Optional[str] = "NEUTRAL"):
+def format_minimal_report(market_status, stock_cards, macro_status: Optional[str] = "NEUTRAL", market_is_open: tuple[bool, str] = (True, "Open")):
     """
     生成極簡戰情摘要 (Tactical Tree Layout)
     Format:
@@ -132,7 +113,7 @@ def format_minimal_report(market_status, stock_cards, macro_status: Optional[str
     
     # 1. Header 區塊
     today_str = datetime.now().strftime("%m/%d")
-    report = [f"🤖 **AI 投資戰情** ({today_str})"]
+    report = [f"{Emojis.AI_ROBOT} **AI 投資戰情** ({today_str})"]
     
     # 市場氣象
     vix_val = market_status.get('vix')
@@ -141,17 +122,17 @@ def format_minimal_report(market_status, stock_cards, macro_status: Optional[str
     else:
         vix_display = f"VIX {vix_val}"
     
-    spy_trend = "🌤️多頭" if market_status.get('is_bullish') else "⛈️空頭"
+    spy_trend = f"{Emojis.BULL}多頭" if market_status.get('is_bullish') else f"{Emojis.BEAR}空頭"
     if 'stage' in market_status and "Bull" in market_status.get('stage', ''): 
-       spy_trend = "🌤️多頭"
+       spy_trend = f"{Emojis.BULL}多頭"
     elif 'stage' in market_status and "Bear" in market_status.get('stage', ''):
-       spy_trend = "⛈️空頭"
+       spy_trend = f"{Emojis.BEAR}空頭"
         
     report.append(f"📊 市場: {spy_trend} | {vix_display}")
     
-    # 宏觀狀態 (New)
-    if macro_status:
-        report.append(f"🌍 宏觀: {macro_status}")
+    # 宏觀狀態 (New) - REMOVED per User Request ("我有要求這個嗎?")
+    # if macro_status:
+    #     report.append(f"🌍 宏觀: {macro_status}")
     
     # 動態連結
     if Config.get("DASHBOARD_URL"):
@@ -159,9 +140,19 @@ def format_minimal_report(market_status, stock_cards, macro_status: Optional[str
     
     report.append("") # 空行分隔
 
+    # [UX Fix] Market Closed Handling
+    # [UX Fix] Market Closed Handling
+    is_open, close_reason = market_is_open if isinstance(market_is_open, tuple) else (market_is_open, "Reason Unknown")
+    
+    if not is_open:
+        report.append(f"{Emojis.SLEEP} **今日美股休市**")
+        report.append(f"原因: {close_reason}")
+        report.append("您可以點擊上方連結查看最新市場數據。")
+        return "\n".join(report)
+
     # 2. Body 區塊
     if not stock_cards:
-        report.append("💤 本日無重點關注標的")
+        report.append(f"{Emojis.ZZZ} 本日無重點關注標的")
         return "\n".join(report)
 
     target_stocks = [c for c in stock_cards if c.overall_status in ["PASS", "WATCHLIST"]]
@@ -173,11 +164,11 @@ def format_minimal_report(market_status, stock_cards, macro_status: Optional[str
         # A. 第一行: 標題 (Symbol + Rating)
         # Rating Emoji
         rating_map = {
-            "PASS": "🟢",
-            "WATCHLIST": "🟡",
-            "REJECT": "🔴"
+            "PASS": Emojis.PASS,
+            "WATCHLIST": Emojis.WATCHLIST,
+            "REJECT": Emojis.REJECT
         }
-        icon = rating_map.get(card.overall_status, "⚪")
+        icon = rating_map.get(card.overall_status, Emojis.UNKNOWN)
         header_line = f"{icon} **{card.symbol}**"
         report.append(header_line)
         
@@ -192,9 +183,9 @@ def format_minimal_report(market_status, stock_cards, macro_status: Optional[str
             # Calculate MoS for display and logic
             mos_dcf = (intrinsic_val - card.price) / card.price
             if card.price > intrinsic_val: # Stock is trading at a premium to intrinsic value
-                val_str = f"💰 DCF估值: ${intrinsic_val:.0f} (溢價 {-mos_dcf:.0%})" # Display positive premium
+                val_str = f"{Emojis.MONEY} DCF估值: ${intrinsic_val:.0f} (溢價 {-mos_dcf:.0%})" # Display positive premium
             else: # Stock is trading at a discount to intrinsic value
-                val_str = f"💰 DCF估值: ${intrinsic_val:.0f} (低估 {mos_dcf:.0%})" # Display positive discount
+                val_str = f"{Emojis.MONEY} DCF估值: ${intrinsic_val:.0f} (低估 {mos_dcf:.0%})" # Display positive discount
             line2_parts.append(val_str)
         else:
             line2_parts.append("💰 DCF: N/A")
@@ -205,24 +196,13 @@ def format_minimal_report(market_status, stock_cards, macro_status: Optional[str
         
         report.append(" | ".join(line2_parts))
 
-        # C. 第三行: 短評 (Logic Rule)
-        # 3.1 Valuation Status
-        # mos < -0.2 -> ⚠️嚴重高估
-        # mos < -0.1 -> 高估 (User said "高估" but let's use emoji if possible? No emoji in user spec for this one?)
-        # User spec: mos < -0.1 -> "高估". Let's add emoji 🔸? Or just text. User example has "⚠️嚴重高估".
-        
-        val_status = "⚖️合理"
-        if mos_dcf < -0.2:
-            val_status = "⚠️嚴重高估"
-        elif mos_dcf < -0.1:
-            val_status = "🔸高估" # Add orange diamond for consistency
-        elif mos_dcf > 0.2:
-            val_status = "✅深度低估"
-        elif mos_dcf > 0.1:
-            val_status = "🔹低估" # Blue diamond
+        # C. 第三行: 短評 (Logic Rule via Model)
+        val_status = card.get_valuation_status()
             
         # 3.2 Market Mood (Z-Score)
+        # Extract Z for display only (Logic in Model)
         z_score_match = 0.0
+        import re
         for tag in card.valuation_check.get('tags', []):
             if "Z=" in tag:
                 match = re.search(r"Z=([-\d\.]+)", tag)
@@ -230,11 +210,7 @@ def format_minimal_report(market_status, stock_cards, macro_status: Optional[str
                     z_score_match = float(match.group(1))
                     break
         
-        mood_status = "☁️情緒中性"
-        if z_score_match > 1.5:
-            mood_status = "🔥市場過熱"
-        elif z_score_match < -1.5:
-            mood_status = "❄️市場恐慌"
+        mood_status = card.get_market_mood()
             
         line3 = f"   📊 {val_status} | {mood_status} (Z={z_score_match:.1f})"
         report.append(line3)
@@ -250,7 +226,7 @@ def format_minimal_report(market_status, stock_cards, macro_status: Optional[str
             
             report.append(f"   🗣️ 分析：{clean_summary}")
         else:
-            report.append(f"   🗣️ 分析：暫無 AI 觀點")
+            report.append(f"   {Emojis.SPEAK} 分析：暫無 AI 觀點")
             
         report.append("") # Spacer
 
@@ -281,8 +257,8 @@ def format_private_portfolio_report(market_status, stock_cards):
     
     for i, card in enumerate(cards_with_notes, 1):
         status_emoji = {
-            "PASS": "🟢", "WATCHLIST": "🟡", "REJECT": "🔴"
-        }.get(card.overall_status, "⚪")
+            "PASS": Emojis.PASS, "WATCHLIST": Emojis.WATCHLIST, "REJECT": Emojis.REJECT
+        }.get(card.overall_status, Emojis.UNKNOWN)
         
         report.append(f"{i}. {card.symbol} ({status_emoji} {card.overall_status})")
         

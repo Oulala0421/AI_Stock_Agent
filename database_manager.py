@@ -14,7 +14,7 @@ Date: 2025-12-08
 import os
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from dataclasses import asdict
 from pymongo import MongoClient, ASCENDING, DESCENDING
@@ -45,21 +45,25 @@ class DatabaseManager:
     _client = None
     _db = None
     enabled = False
+    _initialized = False # Track if connection attempted
     
     def __new__(cls):
         """
         Singleton Pattern: Ensure only one instance exists globally
         
-        Why Singleton?
-        - MongoClient has built-in connection pooling
-        - Prevents multiple unnecessary connections
-        - Ensures consistent state across application
+        Lazy Loading: Connection is NOT established here.
+        It is deferred until the first method call that needs it.
         """
         if cls._instance is None:
             cls._instance = super(DatabaseManager, cls).__new__(cls)
-            cls._instance._init_client()
+            # cls._instance._init_client()  <-- MOVED to lazy load
         return cls._instance
     
+    def _ensure_connection(self):
+        """Lazy load connection if not already initialized"""
+        if not self._initialized:
+            self._init_client()
+
     def _init_client(self):
         """
         Initialize MongoDB connection with timeout and error handling
@@ -69,6 +73,7 @@ class DatabaseManager:
         - If connection fails, logs error and continues with disabled state
         - Sets 5-second timeout to prevent hanging
         """
+        self._initialized = True
         self.enabled = False
         uri = Config.get("MONGODB_URI")
         
@@ -153,12 +158,6 @@ class DatabaseManager:
         - Nested dataclass structures
         - Optional fields (price prediction) -> stored as null if None
         - Ensures all data types are BSON-compatible
-        
-        Args:
-            card: StockHealthCard object from GARP analysis
-            
-        Returns:
-            Dictionary ready for MongoDB insertion
         """
         # Convert dataclass to dict
         data = asdict(card)
@@ -208,6 +207,8 @@ class DatabaseManager:
             report_text: Formatted report string
             date: Analysis date (YYYY-MM-DD), defaults to today
         """
+        self._ensure_connection() # Lazy Load Check
+        
         if not self.enabled:
             logger.debug("MongoDB disabled, skipping save")
             return
@@ -227,7 +228,7 @@ class DatabaseManager:
                 "report": report_text,
                 "raw_data": self._serialize_card(card),
                 # "created_at": datetime.utcnow(),  <-- REMOVED to avoid conflict
-                "updated_at": datetime.utcnow()
+                "updated_at": datetime.now(timezone.utc)
             }
             
             # Upsert logic: Query by (date, symbol)
@@ -239,7 +240,7 @@ class DatabaseManager:
                 query,
                 {
                     "$set": doc,
-                    "$setOnInsert": {"created_at": datetime.utcnow()}
+                    "$setOnInsert": {"created_at": datetime.now(timezone.utc)}
                 },
                 upsert=True
             )

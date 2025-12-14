@@ -26,6 +26,7 @@ Sprint: 2 - Truth Over Hallucination
 import os
 import json
 import logging
+import yaml
 from typing import List, Dict, Any, Optional
 import google.generativeai as genai
 from config import Config
@@ -46,30 +47,25 @@ class NewsAgent:
     - Receives hard facts from GoogleNewsSearcher
     - Provides structured investment commentary
     - Outputs JSON for integration with StockHealthCard
-    
-    Architecture:
-    - Input: List of news articles (from GoogleNewsSearcher)
-    - Process: LLM analysis with structured prompt
-    - Output: JSON with sentiment, moat impact, prediction
-    
-    Why Gemini 1.5 Flash?
-    - Cost: $0.075/1M input tokens (cheaper than GPT-4)
-    - Speed: Fast response time
-    - Context: 1M token window (handles many news articles)
-    - JSON Mode: Native support for structured output
     """
     
     def __init__(self):
         """
         Initialize NewsAgent with Gemini API
-        
-        Fallbacks:
-        1. Gemini (primary)
-        2. Disabled if no API key
         """
         self.api_key = Config.get("GEMINI_API_KEY")
         self.enabled = bool(self.api_key)
         
+        # Load Prompts
+        try:
+            prompt_path = os.path.join(os.path.dirname(__file__), 'prompts.yaml')
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                self.prompts = yaml.safe_load(f)
+            logger.info("✅ Validated prompts.yaml")
+        except Exception as e:
+            logger.error(f"❌ Failed to load prompts.yaml: {e}")
+            self.prompts = {}
+
         if not self.enabled:
             logger.warning("⚠️  GEMINI_API_KEY not found. News analysis disabled.")
             logger.info("💡 Set GEMINI_API_KEY in .env to enable AI commentary")
@@ -79,7 +75,7 @@ class NewsAgent:
             # Configure Gemini
             genai.configure(api_key=self.api_key)
             
-            # Safety settings - BLOCK_NONE for all categories
+            # Safety settings
             safety_settings = [
                 {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
                 {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -87,28 +83,30 @@ class NewsAgent:
                 {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
             ]
             
-            # Try Gemini 2.5 Flash first (thinking model - needs more tokens)
+            # Try Configured Model first
+            model_id = Config.get("AI_MODEL", "gemini-2.5-flash")
+            fallback_id = Config.get("AI_MODEL_FALLBACK", "gemini-2.0-flash")
+            
             try:
                 self.model = genai.GenerativeModel(
-                    'gemini-2.5-flash',
+                    model_id,
                     generation_config={
-                        "temperature": 0.2,  # Lower for consistency (value investing)
+                        "temperature": 0.2,
                         "top_p": 0.95,
-                        "max_output_tokens": 8192,  # High limit for thinking model
+                        "max_output_tokens": 8192,
                         "response_mime_type": "application/json"
                     },
                     safety_settings=safety_settings
                 )
-                self.model_name = "Gemini 2.5 Flash"
-                logger.info("✅ NewsAgent initialized (Gemini 2.5 Flash)")
+                self.model_name = model_id
+                logger.info(f"✅ NewsAgent initialized ({model_id})")
                 
             except Exception as e:
-                # Fallback to Gemini 2.0 Flash (more stable)
-                logger.warning(f"⚠️  Gemini 2.5 Flash failed: {e}")
-                logger.info("🔄 Falling back to Gemini 2.0 Flash...")
+                logger.warning(f"⚠️  {model_id} failed: {e}")
+                logger.info(f"🔄 Falling back to {fallback_id}...")
                 
                 self.model = genai.GenerativeModel(
-                    'gemini-2.0-flash',
+                    fallback_id,
                     generation_config={
                         "temperature": 0.2,
                         "top_p": 0.95,
@@ -117,37 +115,16 @@ class NewsAgent:
                     },
                     safety_settings=safety_settings
                 )
-                self.model_name = "Gemini 2.0 Flash"
-                logger.info("✅ NewsAgent initialized (Gemini 2.0 Flash - Fallback)")
+                self.model_name = fallback_id
+                logger.info(f"✅ NewsAgent initialized ({fallback_id} - Fallback)")
             
         except Exception as e:
             logger.error(f"❌ Failed to initialize Gemini: {e}")
             self.enabled = False
-    
+
     def analyze_news(self, symbol: str, news_list: List[Dict[str, str]], valuation_data: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """
         Analyze news articles and generate structured investment commentary
-        
-        This is the core "Commentator" function:
-        - Receives hard facts (from GoogleNewsSearcher) and valuation data (from GARPStrategy)
-        - Generates AI opinion (structured JSON)
-        - NO hallucination (facts are pre-verified)
-        
-        Args:
-            symbol: Stock ticker (e.g., "TSLA")
-            news_list: List of news articles from GoogleNewsSearcher
-            valuation_data: Optional dictionary containing DCF, MoS, Rating, etc.
-        
-        Returns:
-            Structured analysis (JSON):
-            {
-                "sentiment": "Positive/Negative/Neutral",
-                "sentiment_score": 75,
-                "moat_impact": "Strengthened/Weakened/Unchanged",
-                "prediction": "Bullish/Bearish/Neutral",
-                "confidence": 0.85,
-                "summary_reason": "Fund Manager Style Commentary (<100 words)"
-            }
         """
         if not self.enabled:
             logger.debug(f"News analysis skipped for {symbol} (agent disabled)")
@@ -169,7 +146,6 @@ class NewsAgent:
             # Prepare news summary for LLM
             news_summary = self._format_news_for_llm(news_list)
             
-            # Generate analysis
             # Generate analysis
             logger.info(f"🤖 Analyzing {len(news_list)} news articles for {symbol}...")
             
@@ -225,7 +201,7 @@ class NewsAgent:
     def _create_analysis_prompt(self, symbol: str, news_list: List[Dict], valuation_data: Optional[Dict]) -> str:
         """
         Create the analysis prompt for the AI model.
-        Phase 6.9: Strict Fund Manager Persona (80 words, Advice Focused)
+        Phase 11.1: Load from YAML
         """
         news_text = "\n".join([f"- {n['title']} ({n['date']}): {n['snippet']}" for n in news_list])
         
@@ -251,73 +227,27 @@ class NewsAgent:
         else:
             hard_data_block = f"【硬數據】\n- 股票: {symbol}\n- 暫無估值數據"
 
-        prompt = f"""
-你是一位堅守「長期價值投資」的基金經理人。
+        # Load Template
+        template = self.prompts.get('stock_analysis', '')
+        if not template:
+            logger.error("❌ 'stock_analysis' prompt missing in YAML")
+            return "Error: Prompt Missing"
+            
+        return template.format(hard_data_block=hard_data_block, news_text=news_text)
 
-{hard_data_block}
-
-【新聞情報】
-{news_text}
-
-【任務】
-請綜合數據與新聞，寫一段 **80 字以內** 的快報 (Flash Note)。
-
-內容結構 (流暢口語，不分段，不條列)：
-1. **歸因/現況**：一句話解釋為何溢價或折價 (例如：溢價反映AI預期...)。
-2. **投資建議**：基於長期持有的立場，給出操作指引。
-   - 溢價(MoS<0)：建議「暫停加碼」、「續抱觀望」或「等待回調」。
-   - 折價(MoS>0)：建議「分批佈局」或「積極累積」。
-
-**嚴格要求：**
-- **禁止使用條列式 (1. 2. 3.)**。
-- 字數嚴格控制在 80 字以內。
-- 語氣專業、果斷、直接。
-
-回傳必須是準確的 JSON 格式 (不要 Markdown 標記):
-{{
-    "sentiment": "Positive/Negative/Neutral",
-    "sentiment_score": 75,
-    "confidence": 0.85,
-    "summary_reason": "你的80字短評"
-}}
-"""
-        return prompt
-    
     def get_market_outlook(self, events_data: str) -> str:
         """
-        Generate market outlook based on economic events (legacy method)
-        
-        This method is kept for backward compatibility with main.py
-        It receives hard facts (events_data) and provides AI interpretation
-        
-        Args:
-            events_data: String containing economic events and earnings calendar
-        
-        Returns:
-            AI-generated market outlook commentary
+        Generate market outlook based on economic events
         """
         if not self.enabled:
             return "AI 市場分析功能未啟用（缺少 GEMINI_API_KEY）"
         
         try:
-            prompt = f"""你是一位宏觀經濟分析師。
-
-【任務】
-基於以下真實的經濟數據與財報行程，提供本週市場展望。
-
-【輸入數據】
-{events_data}
-
-【分析要求】
-1. 解讀重要經濟數據對市場的影響
-2. 評估重點公司財報可能帶來的波動
-3. 給出操作建議（偏多/偏空/觀望）
-
-【輸出格式】
-簡潔的市場解讀（<200字），避免重複輸入數據。
-
-請開始分析。
-"""
+            template = self.prompts.get('market_outlook', '')
+            if not template:
+                return "Error: Market Outlook Prompt Missing"
+                
+            prompt = template.format(events_data=events_data)
             
             response = self.model.generate_content(prompt)
             return response.text.strip()

@@ -94,8 +94,18 @@ def get_earnings_warning(ticker_obj):
         return None
 
 
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
 def get_market_regime():
-    print("🌍 分析市場體質 (SPY & VIX)...")
+    logger.info("🌍 分析市場體質 (SPY & VIX)...")
     try:
         # 1. SPY 趨勢
         spy = yf.Ticker("SPY")
@@ -123,7 +133,7 @@ def get_market_regime():
             "vix": vix_price
         }
     except Exception as e:
-        print(f"⚠️ 市場數據抓取失敗: {e}")
+        logger.error(f"⚠️ 市場數據抓取失敗: {e}", exc_info=True)
         return {
             "spy_price": 0,
             "spy_ma200": 0,
@@ -134,10 +144,13 @@ def get_market_regime():
         }
 
 
-def fetch_and_analyze(symbol):
-    print(f"🔄 分析數據: {symbol}...")
+def fetch_and_analyze(symbol, ticker_obj=None):
+    logger.info(f"🔄 分析數據: {symbol}...")
     try:
-        ticker = yf.Ticker(symbol)
+        if ticker_obj:
+            ticker = ticker_obj
+        else:
+            ticker = yf.Ticker(symbol)
         df = ticker.history(period="2y", interval="1d", auto_adjust=True)
         if df.empty:
             return None
@@ -201,5 +214,5 @@ def fetch_and_analyze(symbol):
             }
         }
     except Exception as e:
-        print(f"❌ 數據錯誤 {symbol}: {e}")
+        logger.error(f"❌ 數據錯誤 {symbol}: {e}", exc_info=True)
         return None

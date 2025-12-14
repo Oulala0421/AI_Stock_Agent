@@ -348,8 +348,30 @@ class AdvancedFinancials:
             current_fcf = fcf
             
             # If FCF is negative, DCF breaks.
+            # If FCF is negative, DCF breaks. Use Graham Number fallback.
             if fcf < 0:
-                 return {"intrinsic_value": None, "details": "Negative FCF"}
+                 try:
+                     # Graham Number Fallback: Sqrt(22.5 * EPS * BVPS)
+                     net_income = self.inc.loc['Net Income'].iloc[0] if 'Net Income' in self.inc.index else 0
+                     stockholders_equity = self.bs.loc['Stockholders Equity'].iloc[0] if 'Stockholders Equity' in self.bs.index else \
+                                           (self.bs.loc['Total Assets'].iloc[0] - self.bs.loc['Total Liabilities Net Minority Interest'].iloc[0])
+                     
+                     if net_income > 0 and stockholders_equity > 0:
+                         eps = net_income / shares
+                         bvps = stockholders_equity / shares
+                         graham_number = math.sqrt(22.5 * eps * bvps)
+                         logger.info(f"🧮 FCF Negative ({fcf}), using Graham Number: ${graham_number:.2f}")
+                         return {
+                             "intrinsic_value": graham_number,
+                             "details": "Graham Number (Negative FCF Fallback)",
+                             "discount_rate": 0.0, # Not applicable
+                             "growth_rate": 0.0, # Not applicable
+                             "sentiment_penalty": 0.0
+                         }
+                 except Exception as e_fallback:
+                     logger.warning(f"Graham Number fallback failed: {e_fallback}")
+                     
+                 return {"intrinsic_value": None, "details": "Negative FCF & Graham Failed"}
 
             for i in range(1, 6):
                 current_fcf = current_fcf * (1 + growth_rate)

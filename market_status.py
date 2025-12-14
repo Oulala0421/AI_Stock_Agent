@@ -2,18 +2,32 @@ import pandas_market_calendars as mcal
 from datetime import datetime
 from finvizfinance.calendar import Calendar
 from finvizfinance.earnings import Earnings
+from constants import Emojis
 
 
-def is_market_open() -> bool:
-    """檢查美股 (NYSE) 今天是否開盤"""
+def is_market_open() -> tuple[bool, str]:
+    """
+    Check if NYSE is open.
+    Returns: (is_open, reason_if_closed)
+    """
     try:
         nyse = mcal.get_calendar('NYSE')
-        today = datetime.now().strftime('%Y-%m-%d')
-        schedule = nyse.schedule(start_date=today, end_date=today)
-        return not schedule.empty
+        today = datetime.now()
+        today_str = today.strftime('%Y-%m-%d')
+        schedule = nyse.schedule(start_date=today_str, end_date=today_str)
+        
+        if not schedule.empty:
+            return True, "Market Open"
+            
+        # If empty, determine why
+        if today.weekday() >= 5: # 5=Sat, 6=Sun
+            return False, "週末 (Weekend)"
+            
+        return False, "國定假日 (Holiday)"
+        
     except Exception as e:
         print(f"⚠️ 休市檢查失敗: {e} (預設為開盤)")
-        return True
+        return True, "Check Failed (Default Open)"
 
 
 def get_economic_events() -> str:
@@ -78,8 +92,24 @@ def get_earnings_calendar() -> str:
     except Exception as e:
         print(f"⚠️ 獲取財報日曆失敗: {e}")
         return "財報日曆暫時無法讀取"
+    
+def calculate_macro_status(market_regime: dict) -> str:
+    """Based on VIX and Trend, return a macro status string."""
+    vix = market_regime.get('vix', 20.0)
+    is_bullish = market_regime.get('is_bullish', False)
+    
+    if is_bullish and vix < 20:
+        return f"RISK_ON {Emojis.ROCKET}"
+    elif not is_bullish and vix > 25:
+        return f"RISK_OFF {Emojis.SHIELD}"
+    elif not is_bullish:
+        return f"DEFENSIVE {Emojis.SHIELD}"
+    else:
+        return f"NEUTRAL {Emojis.FAIR}"
+
 
 if __name__ == "__main__":
     print(f"Is Market Open: {is_market_open()}")
     print("Economic Events:\n", get_economic_events())
     print("Earnings Calendar:\n", get_earnings_calendar())
+    print("Macro Status:", calculate_macro_status({'vix': 15, 'is_bullish': True}))

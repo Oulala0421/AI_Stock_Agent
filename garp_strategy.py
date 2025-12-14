@@ -8,6 +8,7 @@ from news_agent import NewsAgent
 from database_manager import DatabaseManager
 from stress_test.monte_carlo import run_monte_carlo_simulation
 from google_news_searcher import GoogleNewsSearcher
+from constants import Emojis
 
 class GARPStrategy:
     def __init__(self):
@@ -17,30 +18,48 @@ class GARPStrategy:
         solvency_config = self.params.get('solvency', {})
         quality_config = self.params.get('quality', {})
         valuation_config = self.params.get('valuation', {})
+        advanced_config = self.params.get('advanced', {})
         
         self.thresholds = {
             'max_debt': solvency_config.get('max_debt_to_equity', 200),
             'min_current': solvency_config.get('min_current_ratio', 1.0),
             'min_roe': quality_config.get('min_roe', 0.15),
             'max_peg': valuation_config.get('max_peg', 1.5),
-            'max_pe': valuation_config.get('max_pe', 40)
+            'max_pe': valuation_config.get('max_pe', 40),
+            # Advanced Metrics
+            'min_z_safe': advanced_config.get('min_z_score_safe', 2.99),
+            'min_z_distress': advanced_config.get('min_z_score_distress', 1.81),
+            'min_f_high': advanced_config.get('min_f_score_high', 7),
+            'max_f_low': advanced_config.get('max_f_score_low', 3)
         }
         
         # Initialize News Agents
         self.news_searcher = GoogleNewsSearcher()
         self.news_agent = NewsAgent()
 
-    def analyze(self, symbol: str) -> StockHealthCard:
+    def analyze(self, symbol: str, market_data: dict = None, ticker_obj = None) -> StockHealthCard:
         """
         Analyze a stock using the GARP strategy and return a StockHealthCard.
+        Args:
+            symbol: Stock ticker
+            market_data: Optional pre-fetched market data (to avoid redundant calls)
+            ticker_obj: Optional pre-initialized yf.Ticker object
         """
         logger.info(f"🔍 Analyzing {symbol} with GARP Strategy...")
         
         # 1. Fetch Data
         try:
-            ticker = yf.Ticker(symbol)
+            # Reuse or Create Ticker
+            if ticker_obj:
+                ticker = ticker_obj
+            else:
+                ticker = yf.Ticker(symbol)
+            
             info = ticker.info
-            market_data = fetch_and_analyze(symbol)
+            
+            # Reuse or Fetch Market Data
+            if market_data is None:
+                market_data = fetch_and_analyze(symbol)
             
             if not market_data:
                 logger.warning(f"⚠️ No market data found for {symbol}, checking cache...")
@@ -79,6 +98,7 @@ class GARPStrategy:
             symbol=symbol, 
             price=price, 
             strategy_type=self.strategy_type,
+            sector=info.get('sector', 'Unknown'), # [Fix] Populate sector
             sparkline=market_data.get('sparkline', []) # [New]
         )
 
@@ -127,10 +147,10 @@ class GARPStrategy:
                 f_score_res = adv.calculate_piotroski_f_score()
                 card.advanced_metrics['piotroski_score'] = f_score_res.get('score')
                 if f_score_res.get('score') is not None:
-                    if f_score_res['score'] >= 7:
-                        card.advanced_metrics['tags'].append(f"🏆 High F-Score ({f_score_res['score']})")
-                    elif f_score_res['score'] <= 3:
-                         card.advanced_metrics['tags'].append(f"⚠️ Low F-Score ({f_score_res['score']})")
+                    if f_score_res['score'] >= self.thresholds['min_f_high']:
+                        card.advanced_metrics['tags'].append(f"{Emojis.GEM} High F-Score ({f_score_res['score']})")
+                    elif f_score_res['score'] <= self.thresholds['max_f_low']:
+                         card.advanced_metrics['tags'].append(f"{Emojis.WARN} Low F-Score ({f_score_res['score']})")
                     else:
                          card.advanced_metrics['tags'].append(f"Average F-Score ({f_score_res['score']})")
     
@@ -140,12 +160,12 @@ class GARPStrategy:
                 if z_score_res.get('score') is not None:
                     status = z_score_res.get('status', 'Unknown')
                     if status == 'Safe':
-                         card.advanced_metrics['tags'].append(f"🛡️ Z-Score Safe ({z_score_res['score']:.2f})")
+                         card.advanced_metrics['tags'].append(f"{Emojis.SHIELD} Z-Score Safe ({z_score_res['score']:.2f})")
                     elif status == 'Distress':
-                         card.advanced_metrics['tags'].append(f"💀 Z-Score Distress ({z_score_res['score']:.2f})")
+                         card.advanced_metrics['tags'].append(f"{Emojis.SKULL} Z-Score Distress ({z_score_res['score']:.2f})")
                          card.red_flags.append(f"Bankruptcy Risk (Z-Score {z_score_res['score']:.2f})")
                     else:
-                         card.advanced_metrics['tags'].append(f"⚖️ Z-Score Grey ({z_score_res['score']:.2f})")
+                         card.advanced_metrics['tags'].append(f"{Emojis.FAIR} Z-Score Grey ({z_score_res['score']:.2f})")
     
                 # FCF Yield
                 fcf_res = adv.calculate_fcf_yield(price)
@@ -234,20 +254,20 @@ class GARPStrategy:
         z_score = card.advanced_metrics.get('altman_z_score')
         f_score = card.advanced_metrics.get('piotroski_score')
 
-        # 1. Bankruptcy Veto (Z-Score < 1.8)
-        if z_score is not None and z_score < 1.8:
+        # 1. Bankruptcy Veto
+        if z_score is not None and z_score < (self.thresholds['min_z_distress'] - 0.01): # < 1.8
             card.overall_status = OverallStatus.REJECT.value
             card.overall_reason = f"⛔ Rejected: High Bankruptcy Risk (Z-Score {z_score:.2f})"
 
-        # 2. Weak Financials Veto (F-Score <= 3)
-        if f_score is not None and f_score <= 3:
+        # 2. Weak Financials Veto
+        if f_score is not None and f_score <= self.thresholds['max_f_low']:
             if card.overall_status == OverallStatus.PASS.value:
                 card.overall_status = OverallStatus.WATCHLIST.value
                 card.overall_reason = f"Downgraded: Financials Deteriorating (F-Score {f_score})"
 
         # 3. Quality Rescue (Strong F-Score + Safe Z-Score)
         if card.overall_status == OverallStatus.REJECT.value:
-            if f_score is not None and f_score >= 7 and z_score is not None and z_score > 2.99:
+            if f_score is not None and f_score >= self.thresholds['min_f_high'] and z_score is not None and z_score > self.thresholds['min_z_safe']:
                  card.overall_status = OverallStatus.WATCHLIST.value
                  card.overall_reason = f"Saved by Quality: High F-Score ({f_score}) & Safe Z-Score"
 
@@ -555,66 +575,4 @@ class GARPStrategy:
             
         card.technical_setup['is_passing'] = is_passing
 
-    def _determine_overall_status(self, card: StockHealthCard, market_data: dict = None):
-        """
-        Final Decision Logic:
-        - Must pass Solvency, Quality, and Valuation checks to be 'PASS'.
-        - If any check fails, it goes to 'REJECT' or 'WATCHLIST' depending on severity.
-        """
-        
-        passed_solvency = card.solvency_check['is_passing']
-        passed_quality = card.quality_check['is_passing']
-        passed_valuation = card.valuation_check['is_passing']
-        passed_technical = card.technical_setup['is_passing']
-        
-        if market_data is None:
-            market_data = {}
-        
-        # Logic:
-        # PASS: Solvency + Quality + Valuation all Pass
-        # WATCHLIST: Solvency + Quality Pass, but Valuation Fail OR Technical Fail
-        # REJECT: Solvency Fail OR Quality Fail
-        
-        if passed_solvency and passed_quality and passed_valuation:
-             # Even if technicals are "Overbought", fundamental GARP strategy says it's a good stock, maybe wait for entry.
-             if not passed_technical:
-                 card.overall_status = OverallStatus.WATCHLIST.value
-                 card.overall_reason = "Fundamentals Great, but Technicals Overheated"
-             else:
-                 card.overall_status = OverallStatus.PASS.value
-                 card.overall_reason = "All Systems Go (GARP Approved)"
-        
-        elif passed_solvency and passed_quality and not passed_valuation:
-            card.overall_status = OverallStatus.WATCHLIST.value
-            card.overall_reason = "Great Company, Expensive Price"
-            
-        else:
-            card.overall_status = OverallStatus.REJECT.value
-            card.overall_reason = "Fundamental Red Flags"
 
-        # === Advanced Metrics Overrides (Safety First) ===
-        z_score = card.advanced_metrics.get('altman_z_score')
-        f_score = card.advanced_metrics.get('piotroski_score')
-
-        # 1. Bankruptcy Veto (Z-Score < 1.8)
-        if z_score is not None and z_score < 1.8:
-            # Check if it's already rejected to avoid overwriting a more specific reason? 
-            # Actually, Bankruptcy risk is paramount.
-            card.overall_status = OverallStatus.REJECT.value
-            card.overall_reason = f"⛔ Rejected: High Bankruptcy Risk (Z-Score {z_score:.2f})"
-
-        # 2. Weak Financials Veto (F-Score <= 3)
-        if f_score is not None and f_score <= 3:
-            if card.overall_status == OverallStatus.PASS.value:
-                card.overall_status = OverallStatus.WATCHLIST.value
-                card.overall_reason = f"Downgraded: Financials Deteriorating (F-Score {f_score})"
-            elif card.overall_status == OverallStatus.WATCHLIST.value:
-                 # If it was already watchlist, maybe keep it but warn
-                 pass
-
-        # 3. Quality Rescue (Strong F-Score + Safe Z-Score)
-        # S&P 500 giants often fail static Debt/Equity rules due to buybacks, but have immense cash flow.
-        if card.overall_status == OverallStatus.REJECT.value:
-            if f_score is not None and f_score >= 7 and z_score is not None and z_score > 2.99:
-                 card.overall_status = OverallStatus.WATCHLIST.value
-                 card.overall_reason = f"Saved by Quality: High F-Score ({f_score}) & Safe Z-Score"

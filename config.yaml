@@ -51,4 +51,9 @@ garp:
   valuation:
     max_peg: 1.5             # Growth at Reasonable Price
     max_pe: 40               # Cap for high growth
+  advanced:
+    min_z_score_safe: 2.99
+    min_z_score_distress: 1.81
+    min_f_score_high: 7
+    max_f_score_low: 3
 

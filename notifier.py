@@ -1,6 +1,14 @@
 import requests
 import time
 import os
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 def send_telegram_chunked(message, token, chat_id):
     """
@@ -17,10 +25,14 @@ def send_telegram_chunked(message, token, chat_id):
     messages = [message[i:i+max_length] for i in range(0, len(message), max_length)]
     
     for i, msg_chunk in enumerate(messages):
+        # [Compatibility] Convert standard Markdown bold (**) to Telegram Markdown (*)
+        # Telegram legacy Markdown uses *bold*
+        tg_msg_chunk = msg_chunk.replace("**", "*")
+        
         # 預設嘗試 Markdown
         payload = {
             "chat_id": chat_id,
-            "text": msg_chunk,
+            "text": tg_msg_chunk,
             "parse_mode": "Markdown" 
         }
         
@@ -30,25 +42,30 @@ def send_telegram_chunked(message, token, chat_id):
             # 如果失敗 (通常是 400 Bad Request 語法錯誤)
             if r.status_code != 200:
                 error_desc = r.json().get('description', '')
-                print(f"⚠️ TG Markdown 發送失敗 (第{i+1}段): {error_desc}")
+                logger.warning(f"⚠️ TG Markdown 發送失敗 (第{i+1}段): {error_desc}")
                 
-                # 自動降級為純文字 (Fallback)
-                print(f"🔄 嘗試使用純文字重發...")
-                payload["parse_mode"] = None
+                 # 自動降級為純文字 (Fallback)
+                logger.info(f"🔄 嘗試使用純文字重發 (移除 parse_mode)...")
+                # Remove parse_mode completely for plain text
+                if "parse_mode" in payload:
+                    del payload["parse_mode"]
+                # Use original chunk (without replaced asterisks) for plain text readability
+                payload["text"] = msg_chunk 
+                
                 r2 = requests.post(url, json=payload, timeout=10)
                 
                 if r2.status_code == 200:
-                    print(f"✅ TG 純文字模式重發成功 (第{i+1}段)")
+                    logger.info(f"✅ TG 純文字模式重發成功 (第{i+1}段)")
                 else:
-                    print(f"❌ TG 發送最終失敗 (第{i+1}段)")
-                    print(f"   Response: {r2.text}")
+                    logger.error(f"❌ TG 發送最終失敗 (第{i+1}段)")
+                    logger.error(f"   Response: {r2.text}")
             else:
-                print(f"✅ TG 發送成功 (第{i+1}段)")
+                logger.info(f"✅ TG 發送成功 (第{i+1}段)")
             
             time.sleep(1) # 避免 Rate Limit
             
         except Exception as e:
-            print(f"❌ TG 連線錯誤: {e}")
+            logger.error(f"❌ TG 連線錯誤: {e}")
 
 def send_line(message, token, user_id=None, group_id=None):
     """
@@ -62,7 +79,7 @@ def send_line(message, token, user_id=None, group_id=None):
     限制：LINE 單則訊息上限 5000 字元
     """
     if not token:
-        print("⚠️ LINE_TOKEN 未設定，跳過 LINE 發送")
+        logger.warning("⚠️ LINE_TOKEN 未設定，跳過 LINE 發送")
         return
     
     headers = {
@@ -108,39 +125,39 @@ def send_line(message, token, user_id=None, group_id=None):
             
             if r.status_code == 200:
                 if len(message_chunks) > 1:
-                    print(f"✅ LINE 發送成功 ({mode_name}) - 第{i+1}/{len(message_chunks)}段")
+                    logger.info(f"✅ LINE 發送成功 ({mode_name}) - 第{i+1}/{len(message_chunks)}段")
                 else:
-                    print(f"✅ LINE 發送成功 ({mode_name})")
+                    logger.info(f"✅ LINE 發送成功 ({mode_name})")
             elif r.status_code == 400:
                 error_data = r.json() if r.text else {}
                 error_msg = error_data.get('message', 'Unknown error')
-                print(f"❌ LINE 發送失敗 ({mode_name}) - 第{i+1}段")
-                print(f"   Status Code: 400 - Bad Request")
-                print(f"   錯誤訊息: {error_msg}")
+                logger.error(f"❌ LINE 發送失敗 ({mode_name}) - 第{i+1}段")
+                logger.error(f"   Status Code: 400 - Bad Request")
+                logger.error(f"   錯誤訊息: {error_msg}")
                 if "Invalid user" in error_msg or "Invalid group" in error_msg:
-                    print(f"💡 提示: ID 無效")
-                    print(f"   - 群組 ID 請從 webhook 取得（執行 line_webhook_server.py）")
-                    print(f"   - 用戶 ID 格式應為 Uxxxxx...")
-                    print(f"   - 群組 ID 格式應為 Cxxxxx...")
+                    logger.warning(f"💡 提示: ID 無效")
+                    logger.warning(f"   - 群組 ID 請從 webhook 取得（執行 line_webhook_server.py）")
+                    logger.warning(f"   - 用戶 ID 格式應為 Uxxxxx...")
+                    logger.warning(f"   - 群組 ID 格式應為 Cxxxxx...")
                 elif "Length must be between" in error_msg:
-                    print(f"💡 提示: 訊息長度超過限制")
-                    print(f"   - 當前段落長度: {len(chunk)} 字元")
-                    print(f"   - LINE 限制: 5000 字元")
+                    logger.warning(f"💡 提示: 訊息長度超過限制")
+                    logger.warning(f"   - 當前段落長度: {len(chunk)} 字元")
+                    logger.warning(f"   - LINE 限制: 5000 字元")
                 else:
-                    print(f"   Response: {r.text}")
+                    logger.error(f"   Response: {r.text}")
                 return  # 某段失敗就停止後續發送
             elif r.status_code == 401:
-                print(f"❌ LINE 發送失敗 - 認證錯誤")
-                print(f"   請檢查 LINE_TOKEN 是否正確")
+                logger.error(f"❌ LINE 發送失敗 - 認證錯誤")
+                logger.error(f"   請檢查 LINE_TOKEN 是否正確")
                 return
             elif r.status_code == 403:
-                print(f"❌ LINE 發送失敗 - 權限不足")
-                print(f"   請確認 Bot 已加入目標群組，或檢查 Channel 權限設定")
+                logger.error(f"❌ LINE 發送失敗 - 權限不足")
+                logger.error(f"   請確認 Bot 已加入目標群組，或檢查 Channel 權限設定")
                 return
             else:
-                print(f"❌ LINE 發送失敗 ({mode_name}) - 第{i+1}段")
-                print(f"   Status Code: {r.status_code}")
-                print(f"   Response: {r.text}")
+                logger.error(f"❌ LINE 發送失敗 ({mode_name}) - 第{i+1}段")
+                logger.error(f"   Status Code: {r.status_code}")
+                logger.error(f"   Response: {r.text}")
                 return
             
             # 避免發太快被限流
@@ -148,10 +165,10 @@ def send_line(message, token, user_id=None, group_id=None):
                 time.sleep(1)
                 
         except requests.exceptions.RequestException as e:
-            print(f"❌ LINE 連線錯誤 (第{i+1}段): {e}")
+            logger.error(f"❌ LINE 連線錯誤 (第{i+1}段): {e}")
             return
         except Exception as e:
-            print(f"❌ LINE 發送異常 (第{i+1}段): {e}")
+            logger.error(f"❌ LINE 發送異常 (第{i+1}段): {e}")
             return
 
 # 為了相容 main.py，保留舊函式名稱並轉接
@@ -163,8 +180,8 @@ def send_private_line(message, token, user_id):
     專門用於發送私人通知的輔助函式
     """
     if not user_id:
-        print("⚠️ 無法發送私人訊息: USER_ID 未設定")
+        logger.warning("⚠️ 無法發送私人訊息: USER_ID 未設定")
         return
     
-    print(f"🤫 發送私人通知給 {user_id[:6]}...")
+    logger.info(f"🤫 發送私人通知給 {user_id[:6]}...")
     send_line(message, token, user_id=user_id)
