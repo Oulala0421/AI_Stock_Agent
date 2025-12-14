@@ -136,7 +136,7 @@ def format_minimal_report(market_status, stock_cards, macro_status: Optional[str
     
     # 動態連結
     if Config.get("DASHBOARD_URL"):
-        report.append(f"🔗 [戰情室]({Config['DASHBOARD_URL']})")
+        report.append(f"🔗 [戰情室]({Config.get('DASHBOARD_URL')})")
     
     report.append("") # 空行分隔
 

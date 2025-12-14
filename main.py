@@ -33,7 +33,15 @@ def run_analysis(mode="post_market", dry_run=False):
         market_status_tuple = (True, "Dry Run Force Open")
         
     if not market_is_open:
-        logger.info("😴 今日美股休市，執行休市簡報模式。")
+        logger.info(f"😴 今日美股休市 ({close_reason})")
+        
+        # User Request: "If closed, only send morning message once"
+        # If this is post_market (evening) and market is closed, SKIP entirely.
+        if mode == "post_market":
+            logger.info("🛑 Post-Market & Closed -> Skipping Report (Only sending Morning/Pre-Market notification).")
+            return
+            
+        logger.info("   執行休市簡報模式 (Morning/Pre-Market)...")
     
     # 0.1 Market Regime
     logger.info("📊 市場體質檢測中...")
@@ -143,14 +151,14 @@ def run_analysis(mode="post_market", dry_run=False):
         print("\n📨 正在發送報告...")
         
         # Telegram
-        if Config['TG_TOKEN']:
+        if Config.get('TG_TOKEN'):
             print("   ├─ Telegram")
-            send_telegram(minimal_report_content, Config['TG_TOKEN'], Config['TG_CHAT_ID'])
+            send_telegram(minimal_report_content, Config.get('TG_TOKEN'), Config.get('TG_CHAT_ID'))
             
         # LINE
-        if Config['LINE_TOKEN']:
+        if Config.get('LINE_TOKEN'):
             print("   └─ LINE (Public Group)")
-            send_line(minimal_report_content, Config['LINE_TOKEN'], user_id=None, group_id=Config.get('LINE_GROUP_ID'))
+            send_line(minimal_report_content, Config.get('LINE_TOKEN'), user_id=None, group_id=Config.get('LINE_GROUP_ID'))
             
             # Send Private Report if user_id exists
             if Config.get('LINE_USER_ID'):
