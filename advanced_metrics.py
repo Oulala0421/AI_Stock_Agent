@@ -9,16 +9,17 @@ class AdvancedFinancials:
     using raw financial statements to ensure authenticity.
     """
     
-    def __init__(self, ticker: yf.Ticker):
-        self.ticker = ticker
-        self.bs = ticker.balance_sheet
-        self.inc = ticker.financials
-        self.cf = ticker.cashflow
+    def __init__(self, ticker: str, bs: pd.DataFrame, inc: pd.DataFrame, cf: pd.DataFrame, ticker_info: Dict[str, Any] = None):
+        self.ticker = ticker 
+        self.bs = bs
+        self.inc = inc
+        self.cf = cf
+        self.ticker_info = ticker_info or {}
         
         # Helper to check if dataframes are empty
         self.has_data = not (self.bs.empty or self.inc.empty or self.cf.empty)
         if not self.has_data:
-            logger.warning(f"⚠️ Missing financial statements for {ticker.ticker}")
+            logger.warning(f"⚠️ Missing financial statements for {ticker}")
 
     def calculate_piotroski_f_score(self) -> Dict[str, Any]:
         """
@@ -154,7 +155,7 @@ class AdvancedFinancials:
             }
             
         except Exception as e:
-            logger.error(f"Error calculating Piotroski Check for {self.ticker.ticker}: {e}")
+            logger.error(f"Error calculating Piotroski Check for {self.ticker}: {e}")
             return {"score": None, "details": f"Error: {e}"}
 
     def calculate_altman_z_score(self, current_price: float) -> Dict[str, Any]:
@@ -233,8 +234,192 @@ class AdvancedFinancials:
             }
 
         except Exception as e:
-            logger.error(f"Error calculating Z-Score for {self.ticker.ticker}: {e}")
+            logger.error(f"Error calculating Z-Score for {self.ticker}: {e}")
             return {"score": None, "details": f"Error: {e}"}
+
+    def calculate_altman_z_double_prime(self, current_price: float) -> Dict[str, Any]:
+        """
+        Calculates Altman Z''-Score (Double Prime) for Non-Manufacturing / Emerging Markets.
+        Formula: Z'' = 6.56X1 + 3.26X2 + 6.72X3 + 1.05X4
+        X1 = (Current Assets - Current Liabilities) / Total Assets
+        X2 = Retained Earnings / Total Assets
+        X3 = EBIT / Total Assets
+        X4 = Market Value of Equity / Total Liabilities
+        
+        Zones:
+        > 2.6 : Safe
+        1.1 - 2.6 : Grey Zone
+        < 1.1 : Distress
+        """
+        if not self.has_data:
+             return {"score": None, "details": "No Data"}
+
+        try:
+             # Helper
+            def get_val(df, row_name):
+                if row_name in df.index:
+                    return df.loc[row_name].iloc[0] # Most recent
+                return 0.0
+
+            ta = get_val(self.bs, 'Total Assets')
+            tl = get_val(self.bs, 'Total Liabilities Net Minority Interest')
+            if tl == 0: tl = get_val(self.bs, 'Total Debt')
+
+            if ta == 0:
+                return {"score": None, "details": "Total Assets is 0"}
+
+            # X1: Working Capital / Total Assets
+            wc = get_val(self.bs, 'Working Capital')
+            if wc == 0: 
+                wc = get_val(self.bs, 'Current Assets') - get_val(self.bs, 'Current Liabilities')
+            X1 = wc / ta
+
+            # X2: Retained Earnings / Total Assets
+            re = get_val(self.bs, 'Retained Earnings')
+            X2 = re / ta
+
+            # X3: EBIT / Total Assets
+            ebit = get_val(self.inc, 'EBIT')
+            X3 = ebit / ta
+
+            # X4: Market Value of Equity / Total Liabilities
+            shares = self.ticker_info.get('sharesOutstanding')
+            if not shares:
+                if 'Ordinary Shares Number' in self.bs.index:
+                    shares = self.bs.loc['Ordinary Shares Number'].iloc[0]
+                elif 'Share Issued' in self.bs.index:
+                    shares = self.bs.loc['Share Issued'].iloc[0]
+            
+            market_cap = current_price * (shares if shares else 0)
+            
+            if tl == 0:
+                X4 = 0 # Edge case
+            else:
+                X4 = market_cap / tl
+
+            # Formula Z''
+            z_score = 6.56*X1 + 3.26*X2 + 6.72*X3 + 1.05*X4
+            
+            status = "Distress"
+            if z_score > 2.6:
+                status = "Safe"
+            elif z_score > 1.1:
+                status = "Grey Zone"
+            
+            return {
+                "score": z_score,
+                "status": status,
+                "components": {
+                    "X1_Liquidity": X1,
+                    "X2_AccumulatedEarnings": X2,
+                    "X3_EarningsPower": X3,
+                    "X4_MarketLeverage": X4
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error calculating Z''-Score for {self.ticker}: {e}")
+            return {"score": None, "details": f"Error: {e}"}
+
+    def calculate_continuous_f_score(self) -> Dict[str, Any]:
+        """
+        Calculates Continuous Piotroski F-Score (0.0 - 9.0) using Sigmoid functions.
+        Captures magnitude of improvement rather than binary 0/1.
+        """
+        import math
+        
+        if not self.has_data or self.bs.shape[1] < 2:
+            return {"score": None, "details": "Insufficient Data"}
+
+        def sigmoid(x, k=10):
+            return 1 / (1 + math.exp(-k * x))
+
+        score = 0.0
+        details = []
+        
+        try:
+            # Helper
+            def get_val(df, row_name, col_idx):
+                if row_name in df.index:
+                    return df.loc[row_name].iloc[col_idx]
+                return 0.0
+
+            # 1. Profitability (Net Income > 0) -> Sigmoid(NI / Assets)
+            ni_curr = get_val(self.inc, 'Net Income', 0)
+            ta_curr = get_val(self.bs, 'Total Assets', 0)
+            roa = ni_curr / ta_curr if ta_curr else 0
+            # Centers at 0, steepness 20. If ROA=5%, score ~0.73
+            score += sigmoid(roa, k=20) 
+
+            # 2. Operating Cash Flow > 0
+            cfo_curr = get_val(self.cf, 'Operating Cash Flow', 0)
+            cfo_margin = cfo_curr / ta_curr if ta_curr else 0
+            score += sigmoid(cfo_margin, k=20)
+
+            # 3. ROA Delta (Current - Prior)
+            ni_py = get_val(self.inc, 'Net Income', 1)
+            ta_py = get_val(self.bs, 'Total Assets', 1)
+            roa_py = ni_py / ta_py if ta_py else 0
+            roa_delta = roa - roa_py
+            score += sigmoid(roa_delta, k=50) # Sensitive to small changes
+
+            # 4. CFO > Net Income (Quality)
+            quality_gap = (cfo_curr - ni_curr) / ta_curr if ta_curr else 0
+            score += sigmoid(quality_gap, k=20)
+
+            # 5. Leverage Delta (Lower is better) - Reverse Sigmoid
+            ltd_curr = get_val(self.bs, 'Long Term Debt', 0)
+            ltd_py = get_val(self.bs, 'Long Term Debt', 1)
+            lev_delta = (ltd_curr - ltd_py) / ta_curr if ta_curr else 0
+            score += 1 - sigmoid(lev_delta, k=10) # If delta > 0 (increased debt), score drops
+
+            # 6. Current Ratio Delta
+            cl_curr = get_val(self.bs, 'Current Liabilities', 0)
+            cl_py = get_val(self.bs, 'Current Liabilities', 1)
+            ca_curr = get_val(self.bs, 'Current Assets', 0)
+            ca_py = get_val(self.bs, 'Current Assets', 1)
+            
+            cr_curr = ca_curr / cl_curr if cl_curr else 0
+            cr_py = ca_py / cl_py if cl_py else 0
+            cr_delta = cr_curr - cr_py
+            score += sigmoid(cr_delta, k=5) 
+
+            # 7. Dilution (Shares Delta) - Reverse
+            shares_curr = get_val(self.bs, 'Ordinary Shares Number', 0)
+            shares_py = get_val(self.bs, 'Ordinary Shares Number', 1)
+            if shares_curr == 0: 
+                shares_curr = get_val(self.bs, 'Share Issued', 0)
+                shares_py = get_val(self.bs, 'Share Issued', 1)
+            
+            shares_delta_pct = (shares_curr - shares_py) / shares_py if shares_py else 0
+            score += 1 - sigmoid(shares_delta_pct, k=50) # Any dilution (-score)
+
+            # 8. Gross Margin Delta
+            rev_curr = get_val(self.inc, 'Total Revenue', 0)
+            gp_curr = get_val(self.inc, 'Gross Profit', 0)
+            rev_py = get_val(self.inc, 'Total Revenue', 1)
+            gp_py = get_val(self.inc, 'Gross Profit', 1)
+            
+            gm_curr = gp_curr / rev_curr if rev_curr else 0
+            gm_py = gp_py / rev_py if rev_py else 0
+            gm_delta = gm_curr - gm_py
+            score += sigmoid(gm_delta, k=50)
+
+            # 9. Asset Turnover Delta
+            at_curr = rev_curr / ta_curr if ta_curr else 0
+            at_py = rev_py / ta_py if ta_py else 0
+            at_delta = at_curr - at_py
+            score += sigmoid(at_delta, k=20)
+
+            return {
+                "score": score,
+                "max_score": 9.0,
+                "details": "Continuous Score (Sigmoid)"
+            }
+
+        except Exception as e:
+            logger.error(f"Error calculating Continuous F-Score for {self.ticker}: {e}")
+            return {"score": None, "details": str(e)}
 
     def calculate_fcf_yield(self, current_price: float) -> Dict[str, Any]:
         """
@@ -274,19 +459,21 @@ class AdvancedFinancials:
             }
             
         except Exception as e:
-            logger.error(f"Error calculating FCF Yield for {self.ticker.ticker}: {e}")
+            logger.error(f"Error calculating FCF Yield for {self.ticker}: {e}")
             return {"yield": None, "details": f"Error: {e}"}
 
-    def calculate_sentiment_adjusted_dcf(self, sentiment_z_score: float) -> Dict[str, Any]:
+    def calculate_sentiment_adjusted_dcf(self, sentiment_z_score: float, implied_erp: float = 0.045, risk_free_rate: float = 0.04) -> Dict[str, Any]:
         """
         Calculates Intrinsic Value using a 2-Stage DCF model adjusted for market sentiment.
         
         Logic:
-        - Base Discount Rate: 9.0%
-        - Adjustment: If Market Z-Score > 0 (Overheated), add penalty rate.
-                      Penalty = 2.0% * tanh(Z-Score)
-        - Growth: Revenue Growth from Info (Capped at 15%)
-        - Terminal Growth: 3.0%
+        - Base Discount Rate: Risk Free Rate + Implied ERP (Dynamic)
+        - Adjustment: If Market Is Overheated (Z>0), add Fear Penalty? No, if Overheated, we want strict val.
+          Actually, high VIX (Fear) -> High ERP -> High Discount Rate -> Lower Target (Conserve Cash).
+          Low VIX (Greed) -> Low ERP -> Low Discount Rate -> Higher Target (Chase).
+          This is automatically handled by Implied ERP coming from VIX.
+          
+          We keep 'sentiment_z_score' (News Sentiment) as a specific alpha modifier.
         """
         import math
         
@@ -305,13 +492,14 @@ class AdvancedFinancials:
                 
                 if ocf_idx in self.cf.index:
                     ocf = self.cf.loc[ocf_idx].iloc[0]
+                    # CapEx is usually negative
                     capex = self.cf.loc[cfe_idx].iloc[0] if cfe_idx in self.cf.index else 0
                     fcf = ocf - abs(capex)
                 else:
                     return {"intrinsic_value": None, "details": "Cannot calc FCF"}
             
             # 2. Shares Outstanding
-            shares = self.ticker.info.get('sharesOutstanding')
+            shares = self.ticker_info.get('sharesOutstanding')
             if not shares:
                 # Try balance sheet
                  if 'Ordinary Shares Number' in self.bs.index:
@@ -324,7 +512,7 @@ class AdvancedFinancials:
 
             # 3. Growth Rate
             # Try 'revenueGrowth' from info, else default conservatively
-            growth_input = self.ticker.info.get('revenueGrowth', 0.05)
+            growth_input = self.ticker_info.get('revenueGrowth', 0.05)
             if growth_input is None: growth_input = 0.05
             
             # Cap at 15% (Conservative)
@@ -332,14 +520,16 @@ class AdvancedFinancials:
             # Floor at 2% 
             growth_rate = max(growth_rate, 0.02)
 
-            # 4. Discount Rate (Sentiment Adjusted)
-            base_rate = 0.09
-            sentiment_penalty = 0.0
+            # 4. Discount Rate (Dynamic WACC)
+            # WACC approx = RiskFree + Beta * ERP
+            # Simplified: RiskFree + ERP (assuming Beta=1 for generalized safety) or user passed ERP includes beta?
+            # Let's use: RiskFree + Implied_ERP + Sentiment_Mod
             
-            if sentiment_z_score > 0:
-                # Tanh ranges 0 to 1 for positive inputs
-                # Max penalty = 3% (Slightly increased to be more responsive? User said 0.02 * ... let's stick to user 0.02)
-                sentiment_penalty = 0.02 * math.tanh(sentiment_z_score)
+            base_rate = risk_free_rate + implied_erp
+            
+            sentiment_penalty = 0.0
+            if sentiment_z_score < -1.0: # Negative News Sentiment
+                 sentiment_penalty = 0.01 # Add 1% risk premium
             
             discount_rate = base_rate + sentiment_penalty
             
@@ -406,5 +596,5 @@ class AdvancedFinancials:
             }
 
         except Exception as e:
-            logger.error(f"DCF Calc failed for {self.ticker.ticker}: {e}")
+            logger.error(f"DCF Calc failed for {self.ticker}: {e}")
             return {"intrinsic_value": None, "details": str(e)}

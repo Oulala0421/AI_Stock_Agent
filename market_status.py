@@ -1,3 +1,4 @@
+import yfinance as yf
 import pandas_market_calendars as mcal
 from datetime import datetime
 from finvizfinance.calendar import Calendar
@@ -106,6 +107,40 @@ def calculate_macro_status(market_regime: dict) -> str:
         return f"DEFENSIVE {Emojis.SHIELD}"
     else:
         return f"NEUTRAL {Emojis.FAIR}"
+
+
+
+def get_implied_erp(vix_price: float = None) -> float:
+    """
+    Calculate Implied Equity Risk Premium (ERP).
+    Phase 15.2: Dynamic Risk Adjustment.
+    
+    Formula: ERP = Base_ERP + Sensitivity * (VIX - Base_VIX)
+    Base_ERP = 4.5% (approx long term avg)
+    Base_VIX = 15
+    Sensitivity = 0.3% per VIX point (Estimated simplified model)
+    """
+    if vix_price is None:
+        try:
+             # Try fetch VIX if not provided
+             vix = yf.Ticker("^VIX")
+             hist = vix.history(period="1d")
+             if not hist.empty:
+                 vix_price = hist['Close'].iloc[-1]
+             else:
+                 vix_price = 20.0 # Safety default
+        except:
+             vix_price = 20.0
+             
+    base_erp = 0.045 # 4.5%
+    base_vix = 15.0
+    sensitivity = 0.003 # 0.3% per point
+    
+    adjustment = (vix_price - base_vix) * sensitivity
+    implied_erp = base_erp + adjustment
+    
+    # Clamp (Min 3%, Max 10% for realistic WACC inputs)
+    return max(0.03, min(0.10, implied_erp))
 
 
 if __name__ == "__main__":

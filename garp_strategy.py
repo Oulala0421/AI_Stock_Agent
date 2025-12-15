@@ -8,6 +8,10 @@ from news_agent import NewsAgent
 from database_manager import DatabaseManager
 from stress_test.monte_carlo import run_monte_carlo_simulation
 from google_news_searcher import GoogleNewsSearcher
+from data_adapter import DataAdapter
+from sector_analysis import SectorAnalysis
+from sector_analysis import SectorAnalysis
+from market_status import get_implied_erp
 from constants import Emojis
 
 class GARPStrategy:
@@ -36,6 +40,10 @@ class GARPStrategy:
         # Initialize News Agents
         self.news_searcher = GoogleNewsSearcher()
         self.news_agent = NewsAgent()
+        
+        # Initialize DataAdapter (Phase 13) & SectorAnalysis (Phase 15)
+        self.data_adapter = DataAdapter()
+        self.sector_analysis = SectorAnalysis()
 
     def analyze(self, symbol: str, market_data: dict = None, ticker_obj = None) -> StockHealthCard:
         """
@@ -129,7 +137,10 @@ class GARPStrategy:
 
         # Initialize AdvancedFinancials (Early)
         try:
-            adv = AdvancedFinancials(ticker)
+            # Use DataAdapter to fetch financials (Failover enabled)
+            bs, inc, cf = self.data_adapter.get_financials(symbol)
+            # Pass DataFrames and Info to AdvancedFinancials (Dependency Injection)
+            adv = AdvancedFinancials(symbol, bs, inc, cf, info)
         except Exception as e:
             logger.error(f"Failed to init AdvancedFinancials for {symbol}: {e}")
             adv = None
@@ -496,11 +507,16 @@ class GARPStrategy:
         # === 1. Deep Value Check (AI DCF) ===
         # If available, this takes precedence or supplements analyst targets
         if adv:
-            dcf_res = adv.calculate_sentiment_adjusted_dcf(z_score)
+            # Phase 15.2: Dynamic DCF using Implied ERP
+            # Get VIX/ERP from MarketStatus (mocked or live)
+            implied_erp = get_implied_erp() # Defaults to ~4.5% adjusted by VIX
+            rf_rate = 0.04 # 4% Risk Free (10Y Treasury approx)
+            
+            dcf_res = adv.calculate_sentiment_adjusted_dcf(z_score, implied_erp=implied_erp, risk_free_rate=rf_rate)
             intrinsic_val = dcf_res.get('intrinsic_value')
             
             if intrinsic_val and intrinsic_val > 0:
-                logger.info(f"🧮 DCF Calc: ${intrinsic_val:.2f} (Z={z_score:.2f}, Disc={dcf_res.get('discount_rate', 0):.1%})")
+                logger.info(f"🧮 DCF Calc: ${intrinsic_val:.2f} (ERP={implied_erp:.1%}, Disc={dcf_res.get('discount_rate', 0):.1%})")
                 card.valuation_check['dcf'] = dcf_res
                 mos_dcf = (intrinsic_val - current_price) / current_price
                 card.valuation_check['margin_of_safety_dcf'] = mos_dcf
@@ -512,10 +528,23 @@ class GARPStrategy:
             else:
                  card.valuation_check['dcf_error'] = dcf_res.get('details')
 
-        # PEG Check
+        # PEG Check (Phase 15.1: Sector Neutral)
+        # Calculate Relative PEG Z-Score
+        sector = info.get('sector', 'Unknown')
+        peg_z_score = 0.0
         if peg_ratio is not None:
-            if peg_ratio < 1.0: 
+             peg_z_score = self.sector_analysis.calculate_sector_z_score(sector, 'peg', peg_ratio)
+             card.valuation_check['sector_peg_z'] = peg_z_score
+
+        if peg_ratio is not None:
+            # Dual Condition: Absolute PEG < 1 OR Relative PEG Z < -0.5 (Cheaper than peers)
+            is_cheap_absolute = peg_ratio < 1.0
+            is_cheap_relative = peg_z_score < -0.5
+            
+            if is_cheap_absolute: 
                 card.valuation_check['tags'].append("💎 Undervalued (PEG < 1)")
+            elif is_cheap_relative:
+                card.valuation_check['tags'].append(f"🟢 Sector Bargain (Z={peg_z_score:.2f})")
             elif peg_ratio < dynamic_max_peg:
                 card.valuation_check['tags'].append(f"🟢 Reasonable Price (PEG < {dynamic_max_peg:.2f})")
             else:
