@@ -161,80 +161,105 @@ def format_minimal_report(market_status, stock_cards, macro_status: Optional[str
         report.append(f"{Emojis.ZZZ} 本日無重點關注標的")
         return "\n".join(report)
 
-    target_stocks = [c for c in stock_cards if c.overall_status in ["PASS", "WATCHLIST"]]
+    # Sorting: PASS > WATCHLIST > REJECT
+    priority_map = {
+        "PASS": 0,
+        "WATCHLIST": 1,
+        "REJECT": 2
+    }
+    
+    # Sort cards based on priority
+    target_stocks = sorted(stock_cards, key=lambda x: priority_map.get(x.overall_status, 3))
     
     if not target_stocks:
         report.append("💤 本日無重點關注標的")
     
     for card in target_stocks:
-        # A. 第一行: 標題 (Symbol + Rating)
-        # Rating Emoji
-        rating_map = {
-            "PASS": Emojis.PASS,
-            "WATCHLIST": Emojis.WATCHLIST,
-            "REJECT": Emojis.REJECT
-        }
-        icon = rating_map.get(card.overall_status, Emojis.UNKNOWN)
-        header_line = f"{icon} **{card.symbol}**"
-        report.append(header_line)
-        
-        # B. 第二行: 硬數據 (Price | DCF | Range)
-        line2_parts = []
-        line2_parts.append(f"現價: ${card.price:.2f}") # Actually user example: "現價: $458". I'll use .2f generally to be safe.
-        
-        dcf_data = card.valuation_check.get('dcf', {})
-        intrinsic_val = dcf_data.get('intrinsic_value') if dcf_data else None
-        
-        if intrinsic_val and intrinsic_val > 0:
-            # Calculate MoS for display and logic
-            mos_dcf = (intrinsic_val - card.price) / card.price
-            if card.price > intrinsic_val: # Stock is trading at a premium to intrinsic value
-                val_str = f"{Emojis.MONEY} DCF估值: ${intrinsic_val:.0f} (溢價 {-mos_dcf:.0%})" # Display positive premium
-            else: # Stock is trading at a discount to intrinsic value
-                val_str = f"{Emojis.MONEY} DCF估值: ${intrinsic_val:.0f} (低估 {mos_dcf:.0%})" # Display positive discount
-            line2_parts.append(val_str)
+        # Status-Based Formatting
+        if card.overall_status == "REJECT":
+            # Simplified Logic for REJECT:
+            # 🔴 SYMBOL | $Price | Reason
+            
+            # Clean Reason (Remove "Downgraded: " or redundant prefixes if any)
+            clean_reason = card.overall_reason.replace("Downgraded: ", "").strip()
+            # If reason is too long, truncate? For now, keep it as is.
+            
+            line = f"{Emojis.REJECT} **{card.symbol}** ${card.price:.2f} | {clean_reason}"
+            report.append(line)
+            # Use single spacer for compact list or none? User asked for "Simple Description". 
+            # I'll keep it tight.
+            # report.append("") 
+            
         else:
-            line2_parts.append("💰 DCF: N/A")
-            mos_dcf = 0.0 # Initialize for later use in line C
-
-        if card.monte_carlo_min is not None and card.monte_carlo_max is not None:
-            line2_parts.append(f"區間 ${card.monte_carlo_min:.0f}-${card.monte_carlo_max:.0f}")
-        
-        report.append(" | ".join(line2_parts))
-
-        # C. 第三行: 短評 (Logic Rule via Model)
-        val_status = card.get_valuation_status()
+            # Detailed Logic for PASS/WATCHLIST (Existing Code)
+            # A. 第一行: 標題 (Symbol + Rating)
+            # Rating Emoji
+            rating_map = {
+                "PASS": Emojis.PASS,
+                "WATCHLIST": Emojis.WATCHLIST,
+                "REJECT": Emojis.REJECT
+            }
+            icon = rating_map.get(card.overall_status, Emojis.UNKNOWN)
+            header_line = f"{icon} **{card.symbol}**"
+            report.append(header_line)
             
-        # 3.2 Market Mood (Z-Score)
-        # Extract Z for display only (Logic in Model)
-        z_score_match = 0.0
-        import re
-        for tag in card.valuation_check.get('tags', []):
-            if "Z=" in tag:
-                match = re.search(r"Z=([-\d\.]+)", tag)
-                if match:
-                    z_score_match = float(match.group(1))
-                    break
-        
-        mood_status = card.get_market_mood()
+            # B. 第二行: 硬數據 (Price | DCF | Range)
+            line2_parts = []
+            line2_parts.append(f"現價: ${card.price:.2f}") # Actually user example: "現價: $458". I'll use .2f generally to be safe.
             
-        line3 = f"   📊 {val_status} | {mood_status} (Z={z_score_match:.1f})"
-        report.append(line3)
-
-        # D. 第四行: AI 分析
-        news_analysis = card.advanced_metrics.get('news_analysis')
-        if news_analysis:
-            summary = news_analysis.get('summary_reason', '暫無分析')
-            # Ensure "🗣️ 分析：" prefix and clean format
-            clean_summary = summary.replace("1. ", "").replace("2. ", "").replace("3. ", "")
-            # Remove any potential "Analysis:" prefixes from AI
-            clean_summary = clean_summary.replace("分析：", "").replace("Analysis:", "").strip()
+            dcf_data = card.valuation_check.get('dcf', {})
+            intrinsic_val = dcf_data.get('intrinsic_value') if dcf_data else None
             
-            report.append(f"   🗣️ 分析：{clean_summary}")
-        else:
-            report.append(f"   {Emojis.SPEAK} 分析：暫無 AI 觀點")
+            if intrinsic_val and intrinsic_val > 0:
+                # Calculate MoS for display and logic
+                mos_dcf = (intrinsic_val - card.price) / card.price
+                if card.price > intrinsic_val: # Stock is trading at a premium to intrinsic value
+                    val_str = f"{Emojis.MONEY} DCF估值: ${intrinsic_val:.0f} (溢價 {-mos_dcf:.0%})" # Display positive premium
+                else: # Stock is trading at a discount to intrinsic value
+                    val_str = f"{Emojis.MONEY} DCF估值: ${intrinsic_val:.0f} (低估 {mos_dcf:.0%})" # Display positive discount
+                line2_parts.append(val_str)
+            else:
+                line2_parts.append("💰 DCF: N/A")
+                mos_dcf = 0.0 # Initialize for later use in line C
+    
+            if card.monte_carlo_min is not None and card.monte_carlo_max is not None:
+                line2_parts.append(f"區間 ${card.monte_carlo_min:.0f}-${card.monte_carlo_max:.0f}")
             
-        report.append("") # Spacer
+            report.append(" | ".join(line2_parts))
+    
+            # C. 第三行: 短評 (Logic Rule via Model)
+            val_status = card.get_valuation_status()
+                
+            # 3.2 Market Mood (Z-Score)
+            # Extract Z for display only (Logic in Model)
+            z_score_match = 0.0
+            import re
+            for tag in card.valuation_check.get('tags', []):
+                if "Z=" in tag:
+                    match = re.search(r"Z=([-\d\.]+)", tag)
+                    if match:
+                        z_score_match = float(match.group(1))
+                        break
+            
+            mood_status = card.get_market_mood()
+                
+            line3 = f"   📊 {val_status} | {mood_status} (Z={z_score_match:.1f})"
+            report.append(line3)
+    
+            # D. 第四行: AI 分析
+            news_analysis = card.advanced_metrics.get('news_analysis')
+            if news_analysis:
+                summary = news_analysis.get('summary_reason', '暫無分析')
+                # Ensure "🗣️ 分析：" prefix and clean format
+                clean_summary = summary.replace("1. ", "").replace("2. ", "").replace("3. ", "")
+                # Remove any potential "Analysis:" prefixes from AI
+                clean_summary = clean_summary.replace("分析：", "").replace("Analysis:", "").strip()
+                
+                report.append(f"   🗣️ 分析：{clean_summary}")
+            else:
+                report.append(f"   {Emojis.SPEAK} 分析：暫無 AI 觀點")
+                
+            report.append("") # Spacer
 
     return "\n".join(report)
 
