@@ -36,12 +36,15 @@ def run_analysis(mode="post_market", dry_run=False):
         logger.info(f"😴 今日美股休市 ({close_reason})")
         
         # User Request: "If closed, only send morning message once"
-        # If this is post_market (evening) and market is closed, SKIP entirely.
-        if mode == "post_market":
-            logger.info("🛑 Post-Market & Closed -> Skipping Report (Only sending Morning/Pre-Market notification).")
+        # Strategy: 
+        # - Post-Market (Morning TPE): SEND (Report that market was closed)
+        # - Pre-Market (Evening TPE): SKIP (Don't disturb)
+        
+        if mode == "pre_market":
+            logger.info("🛑 Pre-Market (Evening) & Closed -> Skipping Report.")
             return
-            
-        logger.info("   執行休市簡報模式 (Morning/Pre-Market)...")
+
+        logger.info("   執行休市簡報模式 (Morning/Post-Market Result)...")
     
     # 0.1 Market Regime
     logger.info("📊 市場體質檢測中...")

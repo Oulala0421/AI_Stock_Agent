@@ -112,7 +112,13 @@ def format_minimal_report(market_status, stock_cards, macro_status: Optional[str
     from datetime import datetime
     
     # 1. Header 區塊
-    today_str = datetime.now().strftime("%m/%d")
+    try:
+        from datetime import timezone, timedelta
+        tz_tw = timezone(timedelta(hours=8))
+        today_str = datetime.now(tz_tw).strftime("%m/%d")
+    except ImportError:
+        today_str = datetime.now().strftime("%m/%d")
+        
     report = [f"{Emojis.AI_ROBOT} **AI 投資戰情** ({today_str})"]
     
     # 市場氣象
