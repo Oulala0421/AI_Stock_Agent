@@ -25,7 +25,7 @@ def run_monte_carlo_simulation(portfolio_value, daily_returns, num_simulations=1
     - Hull (2018) "Options, Futures": 100,000+ for robust estimates
     - Glasserman (2004) "Monte Carlo Methods": 100,000-1,000,000 for high precision
     """
-    print(f"🎲 開始 Monte Carlo 模擬 ({num_simulations:,} 條路徑, {days} 天) - 符合學術標準...")
+    # print(f"🎲 開始 Monte Carlo 模擬 ({num_simulations:,} 條路徑, {days} 天) - 符合學術標準...")
     start_time = time.time()
     
     # Calculate stats from history
@@ -80,7 +80,7 @@ def run_monte_carlo_simulation(portfolio_value, daily_returns, num_simulations=1
         var_95_value = float(var_95_value)
         
     end_time = time.time()
-    print(f"✅ 模擬完成 (耗時: {end_time - start_time:.2f} 秒)")
+    # print(f"✅ 模擬完成 (耗時: {end_time - start_time:.2f} 秒)")
     
     # Financial Logic Correction:
     # Removed "Predicited" Mean/Median/Max/Min

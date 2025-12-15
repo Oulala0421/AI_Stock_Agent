@@ -232,6 +232,17 @@ class NewsAgent:
         if not template:
             logger.error("❌ 'stock_analysis' prompt missing in YAML")
             return "Error: Prompt Missing"
+        
+        # Add Valuation-Narrative Alignment Instruction
+        valuation_instruction = ""
+        if valuation_data:
+             if "Overvalued" in valuation_data.get('rating', ''):
+                 valuation_instruction = "⚠️ 重要：量化指標顯示股價「嚴重高估」。除非有極其強烈的基本面反轉理由，否則請勿建議「積極買入 (Accumulate)」。建議偏向「持有 (Hold)」或「觀望」。"
+             elif "Undervalued" in valuation_data.get('rating', ''):
+                 valuation_instruction = "💡 提示：量化指標顯示股價「低估」，可強調價值投資機會。"
+
+        # Append instruction to hard_data_block or prompt
+        hard_data_block += f"\n【AI 寫作指引】\n{valuation_instruction}"
             
         return template.format(hard_data_block=hard_data_block, news_text=news_text)
 

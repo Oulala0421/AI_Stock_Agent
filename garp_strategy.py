@@ -116,11 +116,51 @@ class GARPStrategy:
         # 3. Quality Check
         self._check_quality(card, info)
 
-        # 4. News Sentiment Analysis (Moved before Valuation)
+
+
+        # Initialize AdvancedFinancials (Early)
+        try:
+            # Use DataAdapter to fetch financials (Failover enabled)
+            bs, inc, cf = self.data_adapter.get_financials(symbol)
+            # Pass DataFrames and Info to AdvancedFinancials (Dependency Injection)
+            adv = AdvancedFinancials(symbol, bs, inc, cf, info)
+        except Exception as e:
+            logger.error(f"Failed to init AdvancedFinancials for {symbol}: {e}")
+            adv = None
+
+        # 4. News Sentiment Analysis (Phase 16.5: Context Aware)
+        # Now triggered AFTER financials to pass valuation context
         try:
             if self.news_agent.enabled:
-                news_list = self.news_searcher.search_news(symbol, days=3) # Past 3 days
-                analysis = self.news_agent.analyze_news(symbol, news_list)
+                news_list = self.news_searcher.search_news(symbol, days=3)
+                
+                # Construct Valuation Context (Preliminary)
+                val_data = {
+                    'price': price,
+                    'rating': 'Neutral', # refined below
+                    'intrinsic_value': 0.0,
+                     'mos': 0.0
+                }
+                
+                if adv:
+                    # Calculate Base DCF (Neutral Sentiment Z=0) for Reference
+                    sector = info.get('sector', 'Unknown')
+                    base_dcf = adv.calculate_sentiment_adjusted_dcf(
+                        sentiment_z_score=0.0, 
+                        implied_erp=0.045, 
+                        risk_free_rate=0.04, # Est
+                        sector=sector
+                    )
+                    intrinsic = base_dcf.get('intrinsic_value')
+                    if intrinsic:
+                        val_data['intrinsic_value'] = intrinsic
+                        mos = (intrinsic - price) / price
+                        val_data['mos'] = mos
+                        
+                        if mos > 0.15: val_data['rating'] = "Undervalued"
+                        elif mos < -0.20: val_data['rating'] = "Overvalued" # >20% Premium
+                        
+                analysis = self.news_agent.analyze_news(symbol, news_list, valuation_data=val_data)
                 
                 if analysis:
                     card.advanced_metrics['news_analysis'] = analysis
@@ -134,16 +174,6 @@ class GARPStrategy:
                     
         except Exception as e:
             logger.error(f"News Analysis failed for {symbol}: {e}")
-
-        # Initialize AdvancedFinancials (Early)
-        try:
-            # Use DataAdapter to fetch financials (Failover enabled)
-            bs, inc, cf = self.data_adapter.get_financials(symbol)
-            # Pass DataFrames and Info to AdvancedFinancials (Dependency Injection)
-            adv = AdvancedFinancials(symbol, bs, inc, cf, info)
-        except Exception as e:
-            logger.error(f"Failed to init AdvancedFinancials for {symbol}: {e}")
-            adv = None
 
         # 5. Valuation Check (Now uses Sentiment + DCF)
         self._check_valuation(card, info, price, adv)
@@ -193,15 +223,21 @@ class GARPStrategy:
         try:
             # We need historical returns for Monte Carlo
             # Reuse ticker from earlier if possible, or fetch history
-            # hist = ticker.history(period="1y") # Already have ticker
-            hist = ticker.history(period="1y")
+            # Optimization for Backtest: Use injected returns if available
+            if market_data and 'returns' in market_data:
+                returns = market_data['returns']
+            else:
+                hist = ticker.history(period="1y")
+                if len(hist) > 0:
+                    returns = hist['Close'].pct_change().dropna()
+                else:
+                    returns = None
             
-            if len(hist) > 30:
-                returns = hist['Close'].pct_change().dropna()
+            if returns is not None and len(returns) > 30:
                 
                 # Run Simulation (Using modified Monte Carlo - Financial Logic Correction)
                 # 1 Week (5 days) Risk Range
-                sim_result = run_monte_carlo_simulation(price, returns, num_simulations=5000, days=5)
+                sim_result = run_monte_carlo_simulation(price, returns, num_simulations=10000, days=5)
                 
                 # Extract Risk Metrics
                 # New Keys from Step 3: volatility_range_low, volatility_range_high, risk_downside_5pct
@@ -415,27 +451,18 @@ class GARPStrategy:
         except Exception as e:
             logger.warning(f"⚠️ Failed to get market sentiment: {e}")
             
-        return 0.0
+        return 50.0 # Phase 16.5: Default to Neutral 50 (instead of 0) to avoid Z-Score skewed to negative
 
     def _calculate_dynamic_peg(self, market_z_score: float) -> float:
         """
         Calculate Dynamic PEG Threshold based on Market Sentiment Z-Score.
         Formula: Base_PEG + (Sensitivity * Z_Score)
         """
-        base_peg = self.thresholds['max_peg'] # 1.5, or 1.0 per new user request? User said: "base_peg = 1.0" in request example.
-        # User request said: "base_peg = 1.0"
-        # Let's check self.thresholds['max_peg']. It defaults to 1.5. 
-        # The user's example code said "base_peg = 1.0". 
-        # But if I use 1.0, it's stricter than before. 
-        # Wait, the user said: "base_peg = 1.0 ... dynamic_threshold = base_peg + (0.2 * market_z_score)"
-        # And "將原本寫死的 1.5 替換為 dynamic_threshold"
-        # So I should use 1.0 as the base for the formula.
-        
-        base_peg_formula = 1.0
+        base_peg = 1.0 # Phase 16.5: User requested base 1.0
         sensitivity = 0.2
         
         adjustment = sensitivity * market_z_score
-        dynamic_peg = base_peg_formula + adjustment
+        dynamic_peg = base_peg + adjustment
         
         # Clamp to reasonable limits (0.8 to 2.0)
         return max(0.8, min(2.0, dynamic_peg))
@@ -488,10 +515,14 @@ class GARPStrategy:
         try:
             db = DatabaseManager()
             stats = db.get_sentiment_stats("SPY", days=30)
-            mean = stats.get('mean', 0.0)
-            std = stats.get('std_dev', 1.0)
+            mean = stats.get('mean', 50.0) # Default to Neutral 50
+            # Phase 16.5: Z-Score Floor logic to prevent explosion
+            std = max(stats.get('std_dev', 15.0), 5.0) # Min std dev = 5.0
             
             z_score = (market_score - mean) / std
+            
+            # Clamp Z-Score
+            z_score = max(-5.0, min(5.0, z_score))
         except Exception as e:
             logger.warning(f"⚠️ Failed to calc Z-Score: {e}")
             z_score = 0.0
@@ -512,11 +543,13 @@ class GARPStrategy:
             implied_erp = get_implied_erp() # Defaults to ~4.5% adjusted by VIX
             rf_rate = 0.04 # 4% Risk Free (10Y Treasury approx)
             
-            dcf_res = adv.calculate_sentiment_adjusted_dcf(z_score, implied_erp=implied_erp, risk_free_rate=rf_rate)
+            # Pass Sector for Growth Cap Logic
+            sector = info.get('sector', 'Unknown')
+            dcf_res = adv.calculate_sentiment_adjusted_dcf(z_score, implied_erp=implied_erp, risk_free_rate=rf_rate, sector=sector)
             intrinsic_val = dcf_res.get('intrinsic_value')
             
             if intrinsic_val and intrinsic_val > 0:
-                logger.info(f"🧮 DCF Calc: ${intrinsic_val:.2f} (ERP={implied_erp:.1%}, Disc={dcf_res.get('discount_rate', 0):.1%})")
+                logger.info(f"🧮 DCF Calc: ${intrinsic_val:.2f} (ERP={implied_erp:.1%}, Disc={dcf_res.get('discount_rate', 0):.1%}, Growth={dcf_res.get('growth_rate',0):.1%})")
                 card.valuation_check['dcf'] = dcf_res
                 mos_dcf = (intrinsic_val - current_price) / current_price
                 card.valuation_check['margin_of_safety_dcf'] = mos_dcf
@@ -552,11 +585,22 @@ class GARPStrategy:
                 is_passing = False
         else:
             threshold_pe = self.thresholds['max_pe']
-            if pe_ratio is not None and pe_ratio > threshold_pe:
-                card.valuation_check['tags'].append(f"🔴 High PE (>{threshold_pe})")
-                is_passing = False
-            else:
-                card.valuation_check['tags'].append("⚪ No Valuation Data")
+            forward_pe = info.get('forwardPE')
+            passed_pe = False
+            
+            if pe_ratio is not None and pe_ratio <= threshold_pe:
+                 passed_pe = True
+            elif forward_pe is not None and forward_pe <= threshold_pe:
+                 passed_pe = True # Forward P/E Priority
+                 card.valuation_check['tags'].append(f"🟢 Reasonable Forward PE ({forward_pe:.1f})")
+                 
+            if not passed_pe:
+                val_show = pe_ratio if pe_ratio else (forward_pe if forward_pe else "N/A")
+                if val_show != "N/A":
+                    card.valuation_check['tags'].append(f"🔴 High PE ({val_show} > {threshold_pe})")
+                    is_passing = False
+                else:
+                    card.valuation_check['tags'].append("⚪ No PE Data")
 
         # Margin of Safety Check (Using Adjusted Target)
         if adjusted_target is not None and current_price > 0:

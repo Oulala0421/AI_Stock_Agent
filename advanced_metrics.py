@@ -462,18 +462,10 @@ class AdvancedFinancials:
             logger.error(f"Error calculating FCF Yield for {self.ticker}: {e}")
             return {"yield": None, "details": f"Error: {e}"}
 
-    def calculate_sentiment_adjusted_dcf(self, sentiment_z_score: float, implied_erp: float = 0.045, risk_free_rate: float = 0.04) -> Dict[str, Any]:
+    def calculate_sentiment_adjusted_dcf(self, sentiment_z_score: float, implied_erp: float = 0.045, risk_free_rate: float = None, sector: str = "Unknown") -> Dict[str, Any]:
         """
         Calculates Intrinsic Value using a 2-Stage DCF model adjusted for market sentiment.
-        
-        Logic:
-        - Base Discount Rate: Risk Free Rate + Implied ERP (Dynamic)
-        - Adjustment: If Market Is Overheated (Z>0), add Fear Penalty? No, if Overheated, we want strict val.
-          Actually, high VIX (Fear) -> High ERP -> High Discount Rate -> Lower Target (Conserve Cash).
-          Low VIX (Greed) -> Low ERP -> Low Discount Rate -> Higher Target (Chase).
-          This is automatically handled by Implied ERP coming from VIX.
-          
-          We keep 'sentiment_z_score' (News Sentiment) as a specific alpha modifier.
+        Includes Sector-Specific Growth Caps (Phase 16.5 Improvement).
         """
         import math
         
@@ -510,21 +502,38 @@ class AdvancedFinancials:
             if not shares:
                  return {"intrinsic_value": None, "details": "No Share Count"}
 
-            # 3. Growth Rate
+            # 3. Growth Rate (Sector Aware)
             # Try 'revenueGrowth' from info, else default conservatively
             growth_input = self.ticker_info.get('revenueGrowth', 0.05)
             if growth_input is None: growth_input = 0.05
             
-            # Cap at 15% (Conservative)
-            growth_rate = min(growth_input, 0.15)
+            # Sector Specific Caps
+            max_growth_cap = 0.15 # Default generous cap
+            if sector in ['Technology', 'Consumer Cyclical', 'Communication Services']:
+                max_growth_cap = 0.30 # Allow up to 30% for high growth sectors (NVDA, TSLA)
+            
+            # Apply Cap
+            growth_rate = min(growth_input, max_growth_cap)
             # Floor at 2% 
             growth_rate = max(growth_rate, 0.02)
 
             # 4. Discount Rate (Dynamic WACC)
             # WACC approx = RiskFree + Beta * ERP
-            # Simplified: RiskFree + ERP (assuming Beta=1 for generalized safety) or user passed ERP includes beta?
-            # Let's use: RiskFree + Implied_ERP + Sentiment_Mod
             
+            # Phase 16.5: Dynamic Risk Free Rate
+            if risk_free_rate is None:
+                try:
+                    # Try to fetch 10-Year Treasury Yield (^TNX)
+                    tnx = yf.Ticker("^TNX")
+                    hist = tnx.history(period="5d")
+                    if not hist.empty:
+                        risk_free_rate = hist['Close'].iloc[-1] / 100.0 # Convert 4.5 -> 0.045
+                    else:
+                        risk_free_rate = 0.045 # Default 4.5%
+                except:
+                     risk_free_rate = 0.045
+
+            # Simplified: RiskFree + Implied_ERP + Sentiment_Mod
             base_rate = risk_free_rate + implied_erp
             
             sentiment_penalty = 0.0
@@ -540,6 +549,10 @@ class AdvancedFinancials:
             # If FCF is negative, DCF breaks.
             # If FCF is negative, DCF breaks. Use Graham Number fallback.
             if fcf < 0:
+                 # Phase 16.5: Disable Graham Number for Tech/Growth (Asset Light)
+                 if sector in ['Technology', 'Consumer Cyclical', 'Communication Services']:
+                      return {"intrinsic_value": None, "details": "Negative FCF (Growth Sector) - DCF N/A"}
+
                  try:
                      # Graham Number Fallback: Sqrt(22.5 * EPS * BVPS)
                      net_income = self.inc.loc['Net Income'].iloc[0] if 'Net Income' in self.inc.index else 0

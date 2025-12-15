@@ -11,8 +11,8 @@ def verify_phase16():
     
     ticker = "AAPL"
     end_date = datetime.now()
-    # Use 14 days for quick verification (180 days takes too long with live news)
-    start_date = end_date - timedelta(days=14) 
+    # Use 90 days to verify strategy logic over a meaningful trend
+    start_date = end_date - timedelta(days=90) 
     
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
