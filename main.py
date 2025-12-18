@@ -43,8 +43,12 @@ def run_analysis(mode="post_market", dry_run=False):
         if mode == "pre_market":
             logger.info("🛑 Pre-Market (Evening) & Closed -> Skipping Report.")
             return
-
-        logger.info("   執行休市簡報模式 (Morning/Post-Market Result)...")
+        
+        # Weekly mode runs regardless of "Today"s status (uses Friday data)
+        if mode == "weekly":
+             logger.info("📅 Weekly Mode: Proceeding with analysis using last close data.")
+        else:
+             logger.info("   執行休市簡報模式 (Morning/Post-Market Result)...")
     
     # 0.1 Market Regime
     logger.info("📊 市場體質檢測中...")
@@ -92,8 +96,8 @@ def run_analysis(mode="post_market", dry_run=False):
     # [Start] Collection for Batch Reporting
     all_analyzed_cards = [] 
     
-    # 2. Analyze Stocks (Only if market is open)
-    if market_is_open:
+    # 2. Analyze Stocks (Run if Open OR Weekly force run)
+    if market_is_open or mode == "weekly":
         print("\n📥 連接 Google Sheets...")
         MY_HOLDINGS, MY_WATCHLIST, MY_COSTS, STOCK_TYPES = get_stock_lists()
         
@@ -176,7 +180,7 @@ def run_analysis(mode="post_market", dry_run=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--mode', type=str, default='post_market', choices=['pre_market', 'post_market'])
+    parser.add_argument('--mode', type=str, default='post_market', choices=['pre_market', 'post_market', 'weekly'])
     parser.add_argument('--dry-run', action='store_true', help='Run without sending network requests')
     args = parser.parse_args()
     run_analysis(args.mode, args.dry_run)

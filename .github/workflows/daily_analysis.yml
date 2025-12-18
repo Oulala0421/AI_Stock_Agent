@@ -2,10 +2,8 @@ name: Daily AI Stock Analysis
 
 on:
   schedule:
-    # Pre-Market: 23:00 UTC (7:00 AM Taiwan next day) - Morning report
-    - cron: '0 23 * * *'
-    # Post-Market: 13:30 UTC (9:30 PM Taiwan) - Evening report
-    - cron: '30 13 * * *'
+    # Weekly Report: 23:00 UTC Sunday (7:00 AM Taiwan Monday)
+    - cron: '0 23 * * 0'
   workflow_dispatch:
     inputs:
       mode:
@@ -16,6 +14,7 @@ on:
         options:
         - pre_market
         - post_market
+        - weekly
 
 jobs:
   run_analysis:
@@ -45,12 +44,7 @@ jobs:
       id: mode
       run: |
         if [ "${{ github.event_name }}" == "schedule" ]; then
-          HOUR=$(date -u +%H)
-          if [ "$HOUR" -eq "23" ]; then
-            echo "MODE=pre_market" >> $GITHUB_ENV
-          else
-            echo "MODE=post_market" >> $GITHUB_ENV
-          fi
+           echo "MODE=weekly" >> $GITHUB_ENV
         else
           echo "MODE=${{ github.event.inputs.mode }}" >> $GITHUB_ENV
         fi
