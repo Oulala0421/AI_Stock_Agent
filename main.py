@@ -43,6 +43,17 @@ def run_analysis(mode="post_market", dry_run=False):
         if mode == "pre_market":
             logger.info("🛑 Pre-Market (Evening) & Closed -> Skipping Report.")
             return
+
+        if mode == "holiday_monitor":
+            if "Holiday" in close_reason or "國定假日" in close_reason:
+                logger.info(f"📅 Holiday Monitor: Sending Holiday Reminder ({close_reason})")
+                msg = f"🔔 美股休市提醒\n\n今日 ({market_regime.get('current_time', 'Date')}) 美股休市。\n原因: {close_reason}"
+                print("\n📨 發送休市提醒...")
+                if Config.get('TG_TOKEN'): send_telegram(msg, Config.get('TG_TOKEN'), Config.get('TG_CHAT_ID'))
+                if Config.get('LINE_TOKEN'): send_line(msg, Config.get('LINE_TOKEN'), group_id=Config.get('LINE_GROUP_ID'))
+            else:
+                logger.info("📅 Holiday Monitor: Not a holiday (or just Weekend). Silent exit.")
+            return
         
         # Weekly mode runs regardless of "Today"s status (uses Friday data)
         if mode == "weekly":
@@ -180,7 +191,7 @@ def run_analysis(mode="post_market", dry_run=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--mode', type=str, default='post_market', choices=['pre_market', 'post_market', 'weekly'])
+    parser.add_argument('--mode', type=str, default='post_market', choices=['pre_market', 'post_market', 'weekly', 'holiday_monitor'])
     parser.add_argument('--dry-run', action='store_true', help='Run without sending network requests')
     args = parser.parse_args()
     run_analysis(args.mode, args.dry_run)

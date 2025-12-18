@@ -1,0 +1,41 @@
+name: Holiday Monitor
+
+on:
+  schedule:
+    # Daily Check: 23:00 UTC (7:00 AM Taiwan next day)
+    - cron: '0 23 * * *'
+  workflow_dispatch:
+
+jobs:
+  check_holiday:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: Create Service Account JSON
+      env:
+        GCP_JSON: ${{ secrets.GCP_JSON }}
+      run: |
+        echo "$GCP_JSON" > service_account.json
+
+    - name: Run Holiday Check
+      env:
+        TG_TOKEN: ${{ secrets.TG_TOKEN }}
+        TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        LINE_TOKEN: ${{ secrets.LINE_TOKEN }}
+        LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        LINE_GROUP_ID: ${{ secrets.LINE_GROUP_ID }}
+      run: |
+        python main.py --mode holiday_monitor
