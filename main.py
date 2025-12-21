@@ -17,7 +17,7 @@ from logger import logger # [NEW]
 from analysis_engine import AnalysisEngine # [NEW]
 
 def run_analysis(mode="post_market", dry_run=False):
-    logger.info(f"🚀 AI Stock Agent V2.1 (Cloud Integrated) 啟動中...")
+    logger.info(f"🚀 AI Stock Agent V2.2 (Weekly Fix) 啟動中...")
     logger.info(f"   模式: {mode} | Dry Run: {dry_run}")
     
     # 0. Check Market Status
@@ -53,6 +53,11 @@ def run_analysis(mode="post_market", dry_run=False):
                 if Config.get('LINE_TOKEN'): send_line(msg, Config.get('LINE_TOKEN'), group_id=Config.get('LINE_GROUP_ID'))
             else:
                 logger.info("📅 Holiday Monitor: Not a holiday (or just Weekend). Silent exit.")
+            return
+
+        # Explicitly STOP if market is closed and mode is post_market (Accidental run protection)
+        if mode == "post_market":
+            logger.info(f"🛑 Post-Market & Closed ({close_reason}) -> Stopping (Preventing Zombie Report).")
             return
         
         # Weekly mode runs regardless of "Today"s status (uses Friday data)

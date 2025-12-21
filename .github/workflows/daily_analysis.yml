@@ -2,8 +2,8 @@ name: Daily AI Stock Analysis
 
 on:
   schedule:
-    # Weekly Report: 23:00 UTC Sunday (7:00 AM Taiwan Monday)
-    - cron: '0 23 * * 0'
+    # Weekly Report: 23:05 UTC Sunday (7:05 AM Taiwan Monday)
+    - cron: '5 23 * * 0'
   workflow_dispatch:
     inputs:
       mode:
